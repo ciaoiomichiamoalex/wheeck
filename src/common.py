@@ -10,26 +10,23 @@ from openpyxl.styles import Font
 
 from config_share import PATH_CFG_COMMON
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 
-def decode_json(json_in: str, key: str, value: str | None) -> list | None:
+def decode_json(json_in: str, **kwargs) -> list | None:
     """
     Read a json file and return the objects which verify the condition {key: value}.
 
     :param json_in: The path to the json file.
     :type json_in: str
-    :param key: The key name to be verified.
-    :type key: str
-    :param value: The value to look for.
-    :type value: str | None
+    :param kwargs: The attribute conditions to be verified.
     :return: A list of matching objects in the file, or None if no one match.
     :rtype: list | None
     """
-    with open(json_in, 'r') as jin:
+    with open(json_in) as jin:
         res = list(json.load(jin))
 
-    res = [obj for obj in res if key in obj and obj[key] == value]
+    res = [obj for obj in res if all(obj.get(key) == value for key, value in kwargs.items())]
     return res if res else None
 
 
@@ -77,8 +74,8 @@ class Querier:
     FETCH_ALL: int = 30
     FETCH_MANY: int = 40
 
-    EXCEL_DEFAULT_FONT = 'Aptos Narrow'
-    EXCEL_FORMATS = {
+    _EXCEL_DEFAULT_FONT = 'Aptos Narrow'
+    _EXCEL_FORMATS = {
         type(None): 'General',
         str: '@',
         int: '#,##0',
@@ -99,7 +96,7 @@ class Querier:
         :type save_changes: bool
         :raise IOError: If configuration name is not found.
         """
-        config = decode_json(PATH_CFG_COMMON, 'name', conn_name)
+        config = decode_json(PATH_CFG_COMMON, name=conn_name, genre='database')
         if not config:
             raise IOError(f'Querier: no config <{conn_name}> found!')
 
@@ -174,7 +171,7 @@ class Querier:
         """
         return [column[0] for column in self._cursor.description]
 
-    def save_excel(self, fou: str, sheet_name: str = None, font_face: str = EXCEL_DEFAULT_FONT) -> None:
+    def save_excel(self, fou: str, sheet_name: str = None, font_face: str = _EXCEL_DEFAULT_FONT) -> None:
         """
         Save the last query result into a Excel file.
 
@@ -194,13 +191,13 @@ class Querier:
             for col_num, col in enumerate(self.row_header(), start=1):
                 ws.cell(row=1, column=col_num).value = col
                 ws.cell(row=1, column=col_num).font = Font(name=font_face, bold=True)
-                ws.cell(row=1, column=col_num).number_format = self.EXCEL_FORMATS[type(col)]
+                ws.cell(row=1, column=col_num).number_format = self._EXCEL_FORMATS[type(col)]
 
             for row_num, row in enumerate(self._cursor, start=2):
                 for col_num, col in enumerate(row, start=1):
                     ws.cell(row=row_num, column=col_num).value = col
                     ws.cell(row=row_num, column=col_num).font = Font(name=font_face)
-                    ws.cell(row=row_num, column=col_num).number_format = self.EXCEL_FORMATS[type(col)]
+                    ws.cell(row=row_num, column=col_num).number_format = self._EXCEL_FORMATS[type(col)]
 
             ws.auto_filter.ref = ws.dimensions
             wb.save(fou)
