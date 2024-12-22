@@ -7,7 +7,7 @@ import recording_docs
 from common import get_logger
 from config_share import *
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 logger = get_logger(PATH_LOG)
 
@@ -15,6 +15,7 @@ if __name__ == '__main__':
     # docs: list of documents in PATH_WORKING_DIR (es. [2024_01_DDT_0001_0100.pdf, ...])
     docs = sorted(next(os.walk(PATH_WORKING_DIR), (None, None, []))[2])
     logger.info(f'DDTs dir content {docs}')
+    job_begin = None
 
     # doc: single document from the list (es. 2024_01_DDT_0001_0100.pdf)
     for doc in docs:
@@ -35,13 +36,14 @@ if __name__ == '__main__':
         logger.info(f'JOB END: worked {worked_pages} pages in {doc} [{discarded_pages} discarded pages]')
         os.rename(working_doc, f"{PATH_RECORDED_DIR}/{doc.split('.')[0]}.recorded.pdf")
 
-    # gaps: total number of document number gaps found
-    gaps = recording_docs.check_gaps()
-    logger.info(f'checking gaps... {gaps} gaps found!')
+    if job_begin:
+        # gaps: total number of document number gaps found
+        gaps = recording_docs.check_gaps()
+        logger.info(f'checking gaps... {gaps} gaps found!')
 
-    # update overview of recorded documents
-    logger.info('generate overview of recorded docs...')
-    overview_docs.update_overviews()
-    # update summary of recorded documents year
-    logger.info('generate summary of recorded docs...')
-    overview_docs.update_summaries()
+        # update overview of recorded documents
+        logger.info('generate overview of recorded docs...')
+        overview_docs.update_overviews()
+        # update summary of recorded documents year
+        logger.info('generate summary of recorded docs...')
+        overview_docs.update_summaries()
