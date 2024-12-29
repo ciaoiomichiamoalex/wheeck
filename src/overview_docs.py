@@ -8,7 +8,7 @@ from openpyxl.styles import Alignment, Font
 from common import Querier, get_logger
 from config_share import *
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 logger = get_logger(PATH_LOG, __name__)
 
@@ -28,7 +28,7 @@ def generate_overview(year: int = date.today().year, month: int = date.today().m
     # scheme_name: path to the overview template (es. c:/source/wheeck/scheme/overview.xlsx)
     scheme_name = f'{PATH_SCHEME}/overview.xlsx'
 
-    if querier.run(QUERY_GET_OVERVIEW, (year, month)):
+    if querier.run(QUERY_GET_OVERVIEW, (year, month)).rows:
         # wb: raw XLSX doc
         wb = openpyxl.load_workbook(overview_name if os.path.isfile(overview_name) else scheme_name)
 
@@ -63,7 +63,7 @@ def update_overviews() -> None:
     Update or generate the overviews of deliveries recorded today.
     """
     querier: Querier = Querier()
-    if querier.run(QUERY_GET_LAST_OVERVIEWS):
+    if querier.run(QUERY_GET_LAST_OVERVIEWS).rows:
         for row in querier:
             generate_overview(row.year, row.month)
     del querier
@@ -87,7 +87,7 @@ def generate_summary(year: int = date.today().year) -> None:
     drivers = [e['driver'] for e in members if not e['vehicle']]
     vehicles = sorted([e['vehicle'] for e in members if e['vehicle']])
 
-    if querier.run(QUERY_GET_SUMMARY % ', '.join('?' * len(drivers)), (year, *drivers, *vehicles)):
+    if querier.run(QUERY_GET_SUMMARY % ', '.join('?' * len(drivers)), (year, *drivers, *vehicles)).rows:
         # wb: raw XLSX doc
         wb = openpyxl.load_workbook(scheme_name)
 
@@ -112,7 +112,7 @@ def update_summaries() -> None:
     Update or generate the summaries of deliveries recorded today.
     """
     querier: Querier = Querier()
-    if querier.run(QUERY_GET_LAST_OVERVIEWS):
+    if querier.run(QUERY_GET_LAST_OVERVIEWS).rows:
         for year in set([row[0] for row in querier.fetch(Querier.FETCH_ALL)]):
             generate_summary(year)
     del querier

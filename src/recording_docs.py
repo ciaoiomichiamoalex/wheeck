@@ -13,7 +13,7 @@ from common import Querier, get_logger
 from config_share import *
 from geo import GeoMap
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 logger = get_logger(PATH_LOG, __name__)
 
@@ -217,7 +217,7 @@ def doc_scanner(working_doc: str, job_begin: datetime = datetime.now()) -> tuple
             discard_page_number = int(search.group(2))
             logger.info(f'working doc {working_doc_name} is already a discard doc, source is {discard_doc_source} on page {discard_page_number}...')
 
-            is_discard = querier.run(QUERY_GET_DISCARD, (discard_doc_source, discard_page_number))
+            is_discard = querier.run(QUERY_GET_DISCARD, (discard_doc_source, discard_page_number)).rows
             # check if there is already a discard record on database
             if is_discard and discarded_pages.on_error:
                 discard = querier.fetch(Querier.FETCH_ONE)
@@ -239,7 +239,7 @@ def doc_scanner(working_doc: str, job_begin: datetime = datetime.now()) -> tuple
         elif not delivery.distance:
             # check if distance for this city is already calculated on database
             logger.info(f'checking if the distance for {delivery.delivery_city} has already been calculated...')
-            if querier.run(QUERY_GET_DISTANCE, (delivery.delivery_city,)) == 1:
+            if querier.run(QUERY_GET_DISTANCE, (delivery.delivery_city,)).rows == 1:
                 delivery.distance = querier.fetch(Querier.FETCH_VAL)
             else:
                 logger.info(f'calculating distance from {delivery.delivery_city} for page {working_page} of {working_doc_name}...')
@@ -250,11 +250,11 @@ def doc_scanner(working_doc: str, job_begin: datetime = datetime.now()) -> tuple
         # save delivery record
         if not discarded_pages.on_error:
             logger.info(f'saving delivery {delivery} from page {working_page} of {working_doc_name}...')
-            if querier.run(QUERY_INSERT_DELIVERY, astuple(delivery)[:-1]) != 1:
+            if querier.run(QUERY_INSERT_DELIVERY, astuple(delivery)[:-1]).rows != 1:
                 logger.critical(f'error on saving delivery record from page {working_page} of {working_doc_name}... check the database connection!')
                 logger.error(f'discarding page {working_page} of {working_doc_name} for error on INSERT_DELIVERY...')
                 discarded_pages.on_error = 'INSERT_DELIVERY'
-            elif delivery.id_warning_message and querier.run(QUERY_UPDATE_WARNING, (delivery.id_warning_message,)) != 1:
+            elif delivery.id_warning_message and querier.run(QUERY_UPDATE_WARNING, (delivery.id_warning_message,)).rows != 1:
                 logger.critical(f'error on updating delivery warning status from page {working_page} of {working_doc_name}... check the database connection! [message id: {delivery.id_warning_message}]')
 
         # check if there is errors on page
@@ -268,7 +268,7 @@ def doc_scanner(working_doc: str, job_begin: datetime = datetime.now()) -> tuple
                                                            document_number=delivery.document_number,
                                                            document_genre=delivery.document_genre,
                                                            document_date=delivery.document_date)
-                if delivery.id_warning_message != -1 and querier.run(QUERY_INSERT_DISCARD, astuple(delivery)) != 1:
+                if delivery.id_warning_message != -1 and querier.run(QUERY_INSERT_DISCARD, astuple(delivery)).rows != 1:
                     logger.critical(f'error on saving delivery discard record... check the database connection! [message id: {delivery.id_warning_message}]')
 
             discarded_doc = discard_doc(working_doc, working_page)
@@ -279,10 +279,10 @@ def doc_scanner(working_doc: str, job_begin: datetime = datetime.now()) -> tuple
         if querier.run(QUERY_GET_GAP, (
             delivery.document_number,
             delivery.document_date.year
-        )):
+        )).rows:
             id_warning_gap = querier.fetch(Querier.FETCH_VAL)
             logger.info(f'checking if page {working_page} of {working_doc_name} is gap... ok! [message id: {id_warning_gap}]')
-            if querier.run(QUERY_UPDATE_WARNING, (id_warning_gap,)) != 1:
+            if querier.run(QUERY_UPDATE_WARNING, (id_warning_gap,)).rows != 1:
                 logger.critical(f'error on updating warning gap status from page {working_page} of {working_doc_name}... check the database connection! [message id: {id_warning_gap}]')
 
     doc.close()
@@ -328,14 +328,13 @@ def check_duplicate(delivery: Delivery) -> bool:
     :rtype: bool
     """
     querier: Querier = Querier()
-    querier.run(QUERY_CHECK_DUPLICATE, (
+    is_duplicate = True if querier.run(QUERY_CHECK_DUPLICATE, (
         delivery.document_source,
         delivery.page_number,
         delivery.document_number,
         delivery.document_genre,
         delivery.document_date.year
-    ))
-    is_duplicate = True if querier.fetch(Querier.FETCH_VAL) else False
+    )).fetch(Querier.FETCH_VAL) else False
 
     del querier
     return is_duplicate
@@ -349,7 +348,7 @@ def check_gaps() -> int:
     :rtype: int
     """
     querier: Querier = Querier()
-    gaps_num = querier.run(QUERY_CHECK_GAPS)
+    gaps_num = querier.run(QUERY_CHECK_GAPS).rows
 
     for row in querier:
         save_warning(MessageGenre.GAP,
@@ -392,7 +391,7 @@ def save_warning(message_genre: MessageGenre, **kwargs) -> int:
     """
     querier: Querier = Querier(save_changes=True)
 
-    if querier.run(QUERY_INSERT_WARNING, (message_genre.name, message_genre.value % kwargs)) != 1:
+    if querier.run(QUERY_INSERT_WARNING, (message_genre.name, message_genre.value % kwargs)).rows != 1:
         logger.critical('error on saving delivery warning message record... check the database connection!')
         id_message = -1
     else: id_message = querier.fetch(Querier.FETCH_VAL)

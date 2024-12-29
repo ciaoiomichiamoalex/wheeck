@@ -2,7 +2,7 @@ import datetime
 import decimal
 import json
 import logging
-from typing import Any
+from typing import Any, Self
 
 import openpyxl
 import pyodbc
@@ -10,7 +10,7 @@ from openpyxl.styles import Font
 
 from config_share import PATH_CFG_COMMON
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 
 def decode_json(json_in: str, only_one: bool = True, **kwargs) -> dict | list | None:
@@ -112,6 +112,7 @@ class Querier:
             autocommit=save_changes
         )
         self._cursor = self._connection.cursor()
+        self.rows: int = 0
 
     def __del__(self) -> None:
         self._cursor.close()
@@ -130,7 +131,7 @@ class Querier:
         """
         return self._cursor
 
-    def run(self, query: str, args: list | tuple = None) -> int:
+    def run(self, query: str, args: list | tuple = None) -> Self:
         """
         Execute DQL, DDL or DML query on the database
 
@@ -138,10 +139,11 @@ class Querier:
         :type query: str
         :param args: The parameters list of the query string, defaults to None.
         :type args: list | tuple
-        :return: The number of affected rows.
-        :rtype: int
+        :return: The object itself, so that calls can be chained.
+        :rtype: Querier
         """
-        return self._cursor.execute(query, args).rowcount if args else self._cursor.execute(query).rowcount
+        self.rows = self._cursor.execute(query, args).rowcount if args else self._cursor.execute(query).rowcount
+        return self
 
     def fetch(self, genre: int = FETCH_MANY, size: int = 200) -> Any:
         """
