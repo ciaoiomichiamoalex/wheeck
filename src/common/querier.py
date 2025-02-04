@@ -30,7 +30,7 @@ class Querier:
         datetime: 'dd/mm/yyyy h:mm:ss;@'
     }
 
-    def __init__(self, conn_name: str = 'main', save_changes: bool = False) -> None:
+    def __init__(self, conn_name: str = 'main', save_changes: bool = False, conn_str: dict = None) -> None:
         """
         Read from config/common.json the database configuration and start the connection.
 
@@ -38,9 +38,11 @@ class Querier:
         :type conn_name: str
         :param save_changes: Enables or disables the auto-commit, defaults to False.
         :type save_changes: bool
+        :param conn_str: Allow to pass database configuration manually, override conn_name.
+        :type conn_str: dict
         :raise IOError: If configuration name is not found.
         """
-        config = decode_json(PATH_CFG_COMMON, name=conn_name, genre='database')
+        config = conn_str if conn_str else decode_json(PATH_CFG_COMMON, name=conn_name, genre='database')
         if not config:
             raise IOError(f'Querier: no config <{conn_name}> found!')
 
@@ -83,7 +85,7 @@ class Querier:
         :return: The object itself, so that calls can be chained.
         :rtype: Querier
         """
-        self.rows = (self._cursor.execute(query, *args).rowcount if args
+        self.rows = (self._cursor.execute(query, *args).rowcount if args and set(args) != {None}
                      else self._cursor.execute(query).rowcount)
         return self
 
