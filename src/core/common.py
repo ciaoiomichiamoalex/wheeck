@@ -61,7 +61,7 @@ def get_logger(fou: str,
         fou_handler = logging.FileHandler(fou)
         fou_handler.setLevel(level)
         fou_handler.setFormatter(logging.Formatter(
-            '%(asctime)s [%(name)s] %(levelname)s - %(message)s',
+            '%(asctime)s.%(msecs)03d [%(name)s] %(levelname)s - %(message)s',
             '%d/%m/%Y %H:%M:%S'
         ))
         logger.addHandler(fou_handler)
@@ -70,7 +70,7 @@ def get_logger(fou: str,
             console_handler = logging.StreamHandler()
             console_handler.setLevel(logging.ERROR)
             console_handler.setFormatter(logging.Formatter(
-                '%(asctime)s [%(name)s] %(levelname)s - %(message)s',
+                '%(asctime)s.%(msecs)03d [%(name)s] %(levelname)s - %(message)s',
                 '%d/%m/%Y %H:%M:%S'
             ))
             logger.addHandler(console_handler)
