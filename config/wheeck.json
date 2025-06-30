@@ -1,0 +1,14 @@
+{
+  "ors_api_key": null,
+  "departure_coords": [
+    0.0,
+    0.0
+  ],
+  "members": [
+    {
+      "vehicle": null,
+      "driver": null
+    }
+  ],
+  "backup_dir": null
+}

@@ -1,0 +1,11 @@
+/.idea/
+/.venv/
+.pytest_cache/
+__pycache__/
+
+/DDTs/
+/log/
+/res/
+/scheme/reserve/
+
+/scheme/*.xlsx
