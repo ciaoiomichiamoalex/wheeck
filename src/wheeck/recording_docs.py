@@ -484,5 +484,6 @@ def run() -> None:
             except FileNotFoundError: origin_size = 0
 
             if backup_size >= origin_size: shutil.move(backup_copy, origin_copy)
+            else: os.remove(backup_copy)
         except subprocess.CalledProcessError as error:
             logger.critical('error during backup database schema... [%s]', error.stderr)
