@@ -24,9 +24,9 @@ def generate_overview(year: int = date.today().year,
     """
     querier: Querier = Querier(cfg_in=PATH_CFG)
     # overview_name: path to the result overview (es. c:/source/wheeck/res/2024_01.xlsx)
-    overview_name = f'{PATH_RES}/{year}_{month:0>2}.xlsx'
+    overview_name = PATH_RES / f'{year}_{month:0>2}.xlsx'
     # scheme_name: path to the overview template (es. c:/source/wheeck/scheme/overview.xlsx)
-    scheme_name = f'{PATH_SCHEME}/overview.xlsx'
+    scheme_name = PATH_SCHEME / 'overview.xlsx'
 
     if querier.run(QUERY_GET_OVERVIEW, year, month).rows:
         # wb: raw XLSX doc
@@ -55,8 +55,7 @@ def generate_overview(year: int = date.today().year,
         logger.info('saving overview for date %d-%02d... [%s]',
                     year, month, overview_name.rsplit('/', maxsplit=1)[-1])
         wb.save(overview_name)
-    else:
-        logger.info('no delivery found in date %d-%02d... skipping overview!', year, month)
+    else: logger.info('no delivery found in date %d-%02d... skipping overview!', year, month)
     del querier
 
 
@@ -69,9 +68,9 @@ def generate_summary(year: int = date.today().year) -> None:
     """
     querier: Querier = Querier(cfg_in=PATH_CFG)
     # summary_name: path to the result overview (es. c:/source/wheeck/res/2024_TRIPS.xlsx)
-    summary_name = f'{PATH_RES}/{year}_TRIPS.xlsx'
+    summary_name = PATH_RES / f'{year}_TRIPS.xlsx'
     # scheme_name: path to the overview template (es. c:/source/wheeck/scheme/summary.xlsx)
-    scheme_name = f'{PATH_SCHEME}/summary.xlsx'
+    scheme_name = PATH_SCHEME / 'summary.xlsx'
 
     members = decode_json(PATH_CFG_PRJ)['members']
     drivers = [e['driver'] for e in members if not e['vehicle']]
@@ -92,8 +91,7 @@ def generate_summary(year: int = date.today().year) -> None:
 
         logger.info('saving summary for year %d... [%s]', year, summary_name.rsplit('/', maxsplit=1)[-1])
         wb.save(summary_name)
-    else:
-        logger.info('no delivery found in year %d... skipping summary!', year)
+    else: logger.info('no delivery found in year %d... skipping summary!', year)
     del querier
 
 

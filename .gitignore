@@ -6,6 +6,6 @@ __pycache__/
 /DDTs/
 /log/
 /res/
-/scheme/reserve/
 
+/scheme/*.dump
 /scheme/*.xlsx

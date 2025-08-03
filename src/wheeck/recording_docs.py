@@ -15,10 +15,10 @@ import pypdfium2
 from core import Querier, decode_json, get_logger
 from geo import GeoMap
 from .constants import (CMD_BACKUP_DB, PATH_CFG, PATH_CFG_PRJ, PATH_DISCARDED_DIR, PATH_LOG, PATH_RECORDED_DIR,
-                        PATH_WORKING_DIR, PATTERN_CITY_DX, PATTERN_CITY_SX, PATTERN_DISCARD_DOC, PATTERN_DOC_NUMBER,
-                        PATTERN_QUANTITY, PATTERN_VEHICLE, PATTERN_WORKING_DOC, QUERY_CHECK_DUPLICATE, QUERY_CHECK_GAPS,
-                        QUERY_GET_DISCARD, QUERY_GET_DISTANCE, QUERY_GET_GAP, QUERY_INSERT_DELIVERY,
-                        QUERY_INSERT_DISCARD, QUERY_INSERT_WARNING, QUERY_UPDATE_WARNING)
+                        PATH_SCHEME, PATH_WORKING_DIR, PATTERN_CITY_DX, PATTERN_CITY_SX, PATTERN_DISCARD_DOC,
+                        PATTERN_DOC_NUMBER, PATTERN_QUANTITY, PATTERN_VEHICLE, PATTERN_WORKING_DOC,
+                        QUERY_CHECK_DUPLICATE, QUERY_CHECK_GAPS, QUERY_GET_DISCARD, QUERY_GET_DISTANCE, QUERY_GET_GAP,
+                        QUERY_INSERT_DELIVERY, QUERY_INSERT_DISCARD, QUERY_INSERT_WARNING, QUERY_UPDATE_WARNING)
 from .overview_docs import generate_current
 
 logger = get_logger(PATH_LOG, __name__)
@@ -339,7 +339,7 @@ def discard_doc(working_doc: str,
 
     discard.import_pages(doc, [working_page - 1])
     # discarded_doc: path to the new document (es. c:/source/wheeck/DDTs/discarded/2024_01_DDT_0001_0100_P001.pdf)
-    discarded_doc = f"{PATH_DISCARDED_DIR}/{working_doc.replace('.recording.pdf', '').rsplit('/', maxsplit=1)[-1]}_P{working_page:0>3}.pdf"
+    discarded_doc = PATH_DISCARDED_DIR / f"{working_doc.replace('.recording.pdf', '').rsplit('/', maxsplit=1)[-1]}_P{working_page:0>3}.pdf"
     discard.save(discarded_doc)
 
     discard.close()
@@ -449,8 +449,8 @@ def run() -> None:
         job_begin = datetime.now()
         logger.info('JOB START: working on doc %s...', doc)
         # working_doc: path to document with suffix '.recording' (es. c:/source/wheeck/DDTs/2024_01_DDT_0001_0100.recording.pdf)
-        working_doc = f"{PATH_WORKING_DIR}/{doc.split('.')[0]}.recording.pdf"
-        shutil.move(f'{PATH_WORKING_DIR}/{doc}', working_doc)
+        working_doc = PATH_WORKING_DIR / f"{doc.split('.')[0]}.recording.pdf"
+        shutil.move(PATH_WORKING_DIR / doc, working_doc)
 
         # worked_pages: total number of pages in working_doc
         # discarded_pages: total number of pages with error in working_doc
@@ -463,7 +463,7 @@ def run() -> None:
             if backup_dir:
                 logger.info('copying worked doc %s in backup dir...', doc)
                 shutil.copy(working_doc, f'{backup_dir}/{doc}')
-        shutil.move(working_doc, f"{PATH_RECORDED_DIR}/{doc.split('.')[0]}.recorded.pdf")
+        shutil.move(working_doc, PATH_RECORDED_DIR / f"{doc.split('.')[0]}.recorded.pdf")
 
     if job_begin:
         # gaps: total number of document number gaps found
@@ -474,6 +474,15 @@ def run() -> None:
         generate_current()
 
         # make backup copy of database schema
-        try: subprocess.run(CMD_BACKUP_DB, shell=True, check=True, stderr=subprocess.PIPE, text=True)
+        try:
+            subprocess.run(CMD_BACKUP_DB, shell=True, check=True, stderr=subprocess.PIPE, text=True)
+
+            # keep only last valid database backup copy
+            backup_copy, origin_copy = PATH_SCHEME / f'wheeck.bak.dump', PATH_SCHEME / f'wheeck.dump'
+            backup_size = os.path.getsize(backup_copy)
+            try: origin_size = os.path.getsize(origin_copy)
+            except FileNotFoundError: origin_size = 0
+
+            if backup_size >= origin_size: shutil.move(backup_copy, origin_copy)
         except subprocess.CalledProcessError as error:
             logger.critical('error during backup database schema... [%s]', error.stderr)

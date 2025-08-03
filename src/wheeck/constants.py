@@ -1,16 +1,17 @@
 from datetime import date
+from pathlib import Path
 
-PATH_PRJ = 'c:/source/wheeck'
-PATH_CFG = f'{PATH_PRJ}/config'
-PATH_LOG = f'{PATH_PRJ}/log'
-PATH_RES = f'{PATH_PRJ}/res'
-PATH_SCHEME = f'{PATH_PRJ}/scheme'
+PATH_PRJ = Path(__file__).resolve().parents[2]
+PATH_CFG = PATH_PRJ / 'config'
+PATH_LOG = PATH_PRJ / 'log'
+PATH_RES = PATH_PRJ / 'res'
+PATH_SCHEME = PATH_PRJ / 'scheme'
 
-PATH_CFG_PRJ = f'{PATH_CFG}/wheeck.json'
+PATH_CFG_PRJ = PATH_CFG / 'wheeck.json'
 
-PATH_WORKING_DIR = f'{PATH_PRJ}/DDTs'
-PATH_DISCARDED_DIR = f'{PATH_WORKING_DIR}/discarded'
-PATH_RECORDED_DIR = f'{PATH_WORKING_DIR}/recorded'
+PATH_WORKING_DIR = PATH_PRJ / 'DDTs'
+PATH_DISCARDED_DIR = PATH_WORKING_DIR / 'discarded'
+PATH_RECORDED_DIR = PATH_WORKING_DIR / 'recorded'
 
 PATTERN_WORKING_DOC = r'^\d{4}_\d{2}_DDT_\d{4}_\d{4}(?:_P\d{3})*\.pdf$'
 PATTERN_DISCARD_DOC = r'^(\d{4}_\d{2}_DDT_\d{4}_\d{4})_P(\d{3})(?:_P\d{3})*\.pdf$'
@@ -21,7 +22,7 @@ PATTERN_CITY_SX = r"Luogo di partenza: .+\r\n([\w\t \.\&\-'\/]+)\r\n(?:\d{5}) ([
 PATTERN_QUANTITY = r'(?:Quantità Prezzo\r\n.+)? (?:L|KG) ([\d\.]+),000\s'
 PATTERN_VEHICLE = r'Peso soggetto accisa\r\n([\w\d]{7})\r\n([\w ]+)?\r?\n?Targa automezzo'
 
-CMD_BACKUP_DB = f"pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres -n wheeck -w -c -F c -f \"{PATH_SCHEME}/reserve/wheeck_{date.today().strftime('%Y_%m_%d')}.dump\""
+CMD_BACKUP_DB = f"pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres -n wheeck -w -c -F c -f \"{PATH_SCHEME}/wheeck.bak.dump\""
 
 OVERVIEW_DEFAULT_FONT = 'Arial'
 OVERVIEW_FORMATS = {
