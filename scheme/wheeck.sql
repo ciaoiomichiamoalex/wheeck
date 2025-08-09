@@ -26,16 +26,22 @@ CREATE TABLE IF NOT EXISTS wheeck.delivery (
         CHECK (document_number > 0),
     CONSTRAINT chk_delivery_quantity
         CHECK (quantity > 0),
+    CONSTRAINT chk_delivery_distance
+        CHECK (distance >= 0),
     CONSTRAINT chk_delivery_page_number
         CHECK (page_number > 0)
-);
+)
+;
 
 CREATE UNIQUE INDEX idx_delivery_document_number_genre_year
-    ON wheeck.delivery (document_number, document_genre, document_date);
+    ON wheeck.delivery (document_number, document_genre, document_date)
+;
 CREATE INDEX idx_delivery_company_name
-    ON wheeck.delivery (company_name);
+    ON wheeck.delivery (company_name)
+;
 CREATE INDEX idx_delivery_delivery_city
-    ON wheeck.delivery (delivery_city);
+    ON wheeck.delivery (delivery_city)
+;
 
 CREATE TABLE IF NOT EXISTS wheeck.delivery_warning (
     id INTEGER GENERATED ALWAYS AS IDENTITY,
@@ -45,10 +51,12 @@ CREATE TABLE IF NOT EXISTS wheeck.delivery_warning (
     status BOOLEAN NOT NULL DEFAULT TRUE,
     CONSTRAINT pk_delivery_warning_id
         PRIMARY KEY (id)
-);
+)
+;
 
 CREATE INDEX idx_delivery_warning_message_text
-    ON wheeck.delivery_warning (message_text);
+    ON wheeck.delivery_warning (message_text)
+;
 
 CREATE TABLE IF NOT EXISTS wheeck.delivery_discard (
     id INTEGER GENERATED ALWAYS AS IDENTITY,
@@ -75,34 +83,45 @@ CREATE TABLE IF NOT EXISTS wheeck.delivery_discard (
         ON DELETE RESTRICT,
     CONSTRAINT uq_delivery_discard_document_source_page
         UNIQUE (document_source, page_number),
+    CONSTRAINT chk_delivery_discard_quantity
+        CHECK (quantity > 0),
+    CONSTRAINT chk_delivery_discard_distance
+        CHECK (distance >= 0),
     CONSTRAINT chk_delivery_discard_page_number
         CHECK (page_number > 0)
-);
+)
+;
 
 CREATE INDEX idx_delivery_discard_document_number_genre_year
-    ON wheeck.delivery_discard (document_number, document_genre, document_date);
+    ON wheeck.delivery_discard (document_number, document_genre, document_date)
+;
 CREATE INDEX idx_delivery_discard_company_name
-    ON wheeck.delivery_discard (company_name);
+    ON wheeck.delivery_discard (company_name)
+;
 CREATE INDEX idx_delivery_discard_delivery_city
-    ON wheeck.delivery_discard (delivery_city);
+    ON wheeck.delivery_discard (delivery_city)
+;
 
 CREATE OR REPLACE FUNCTION wheeck.sync_discard_status()
 RETURNS TRIGGER AS $$
 BEGIN
     UPDATE wheeck.delivery_discard
     SET status = NEW.status
-    WHERE id_warning_message = NEW.id;
+    WHERE id_warning_message = NEW.id
+    ;
 
     RETURN NEW;
 END;
-$$ LANGUAGE PLPGSQL;
+$$ LANGUAGE PLPGSQL
+;
 
 DROP TRIGGER IF EXISTS trg_sync_discard_status ON wheeck.delivery_warning;
 CREATE TRIGGER trg_sync_discard_status
 AFTER UPDATE OF status ON wheeck.delivery_warning
 FOR EACH ROW
 WHEN (NEW.message_genre = 'DISCARD')
-EXECUTE FUNCTION wheeck.sync_discard_status();
+EXECUTE FUNCTION wheeck.sync_discard_status()
+;
 
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA wheeck FROM wheeck;
 ALTER DEFAULT PRIVILEGES IN SCHEMA wheeck REVOKE SELECT, INSERT, UPDATE ON TABLES FROM wheeck;
@@ -155,7 +174,8 @@ SELECT id,
     )::INTEGER AS page_number
 FROM wheeck.delivery_warning
 WHERE message_genre = 'DISCARD'
-    AND status IS TRUE;
+    AND status IS TRUE
+;
 
 CREATE OR REPLACE VIEW wheeck.vw_gap_message AS
 SELECT id,
@@ -171,7 +191,8 @@ SELECT id,
     )::INTEGER AS document_year
 FROM wheeck.delivery_warning
 WHERE message_genre = 'GAP'
-    AND status IS TRUE;
+    AND status IS TRUE
+;
 
 CREATE OR REPLACE VIEW wheeck.vw_delivery_gap AS
 WITH doc_nums AS (
@@ -208,4 +229,5 @@ FROM doc_nums dn
         ON dn.document_number = dm.document_number
         AND dn.document_year = EXTRACT(YEAR FROM dm.document_date)
 WHERE d.document_number IS NULL
-ORDER BY dn.document_year, dn.document_number;
+ORDER BY dn.document_year, dn.document_number
+;
