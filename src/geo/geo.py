@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import openrouteservice
 from openrouteservice import directions, exceptions, geocode
 
@@ -12,12 +14,12 @@ class GeoMap:
     The GeoMap object allow for searching coordinates of addresses and calculate distances.
     """
     def __init__(self,
-                 cfg_in: str) -> None:
+                 cfg_in: str | Path) -> None:
         """
         Read from a json file the api key and open a client for the service calls.
 
         :param cfg_in: The path of the json file containing the api key, with name 'ors_api_key'.
-        :type cfg_in: str
+        :type cfg_in: str | Path
         """
         api_key = decode_json(cfg_in)['ors_api_key']
         self._client = openrouteservice.Client(key=api_key)

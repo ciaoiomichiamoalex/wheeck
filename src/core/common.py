@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 
-def decode_json(json_in: str,
+def decode_json(json_in: str | Path,
                 single: bool = True,
                 **kwargs) -> dict | list | None:
     """
@@ -12,7 +12,7 @@ def decode_json(json_in: str,
     If the input value is None the search will be performed only on the input key.
 
     :param json_in: The path to the JSON file.
-    :type json_in: str
+    :type json_in: str | Path
     :param single: Indicates if returns only the first object or the entire list.
     :type single: bool
     :param kwargs: The attribute conditions to be verified as key=value.
@@ -33,7 +33,7 @@ def decode_json(json_in: str,
     return res[0] if res and single else res if res else None
 
 
-def get_logger(fou: str,
+def get_logger(fou: str | Path,
                name: str = 'main',
                level: str = 'INFO',
                console: bool = True) -> logging.Logger:
@@ -41,7 +41,7 @@ def get_logger(fou: str,
     Initialize a new logger object with custom properties, by creating it if it doesn't already exist.
 
     :param fou: The path to the log file.
-    :type fou: str
+    :type fou: str | Path
     :param name: The name of the logger, defaults to 'main'.
     :type name: str
     :param level: The logging level on file, defaults to INFO.

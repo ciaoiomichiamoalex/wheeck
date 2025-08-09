@@ -34,7 +34,7 @@ class Querier:
     }
 
     def __init__(self,
-                 cfg_in: str = None,
+                 cfg_in: str | Path = None,
                  conn_name: str = 'main',
                  conn_str: dict = None,
                  save_changes: bool = False) -> None:
@@ -42,7 +42,7 @@ class Querier:
         Read from a JSON config file the database configuration and start the connection.
 
         :param cfg_in: The path to the JSON file with the database configurations, defaults to None.
-        :type cfg_in: str
+        :type cfg_in: str | Path
         :param conn_name: The database configuration name in the JSON file, defaults to 'main'.
         :type conn_name: str
         :param conn_str: Allow to pass database configuration manually and override conn_name, defaults to None.
@@ -166,14 +166,14 @@ class Querier:
         )
 
     def save_excel(self,
-                   fou: str,
+                   fou: str | Path,
                    sheet_name: str = None,
                    font_face: str = None) -> None:
         """
         Save the last query result into an Excel file.
 
         :param fou: The path to the result file, including filename.
-        :type fou: str
+        :type fou: str | Path
         :param sheet_name: The name of the sheet into the file, defaults to Excel defaults sheet name.
         :type sheet_name: str
         :param font_face: The font name to be used into the file, defaults to Excel defaults font family.
@@ -205,13 +205,13 @@ class LowQuerier(Querier):
     The LowQuerier object allows for run queries on SQLite database and fetch the extracted data.
     """
     def __init__(self,
-                 conn_in: str = ':memory:',
+                 conn_in: str | Path = ':memory:',
                  save_changes: bool = False) -> None:
         """
         Start the connection to the SQLite database.
 
         :param conn_in: The path to the SQLite database file, defaults to in memory database.
-        :type conn_in: str
+        :type conn_in: str | Path
         :param save_changes: Enables or disables the auto-commit, defaults to True.
         :type save_changes: bool
         """

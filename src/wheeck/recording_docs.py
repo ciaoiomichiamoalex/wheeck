@@ -9,6 +9,7 @@ from dataclasses import asdict, astuple, dataclass, field
 from datetime import date, datetime
 from difflib import SequenceMatcher
 from enum import Enum
+from pathlib import Path
 
 import pypdfium2
 
@@ -84,13 +85,13 @@ class MessageGenre(Enum):
     WARNING = 'Had similarity crash for %(genre)s %(record)s on page %(page)d of doc %(doc)s'
 
 
-def doc_scanner(working_doc: str,
+def doc_scanner(working_doc: str | Path,
                 job_begin: datetime = datetime.now()) -> tuple[int, int]:
     """
     Scan a DDT PDF document to extract delivery information.
 
     :param working_doc: The path to the document.
-    :type working_doc: str
+    :type working_doc: str | Path
     :param job_begin: The timestamp of the job starting.
     :type job_begin: datetime
     :return: The number of worked pages and discarded pages.
@@ -318,13 +319,13 @@ def doc_scanner(working_doc: str,
     return doc_pages, discarded_pages.number
 
 
-def discard_doc(working_doc: str,
+def discard_doc(working_doc: str | Path,
                 working_page: int) -> str:
     """
     Generate a new PDF document by extracting a single page from another.
 
     :param working_doc: Path to the source document.
-    :type working_doc: str
+    :type working_doc: str | Path
     :param working_page: Page number which must be extracted.
     :type working_page: int
     :return: The path to the new document.
