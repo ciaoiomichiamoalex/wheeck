@@ -52,10 +52,12 @@ class Querier:
         :raise IOError: If configuration is not found.
         """
         if not conn_str and cfg_in:
-            if Path(cfg_in).is_dir():
-                cfg_in = Path(cfg_in) / 'querier.json'
+            cfg_in = Path(cfg_in).resolve()
 
-            if not Path(cfg_in).is_file():
+            if cfg_in.is_dir():
+                cfg_in = cfg_in / 'querier.json'
+
+            if not cfg_in.is_file():
                 raise IOError(f'Querier: no config {cfg_in} found!')
 
             conn_in = f'{cfg_in}::{conn_name}'

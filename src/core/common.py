@@ -55,8 +55,9 @@ def get_logger(fou: str,
     if not logger.hasHandlers():
         logger.setLevel(logging.DEBUG)
 
-        if Path(fou).is_dir():
-            fou = Path(fou) / f"{date.today().strftime('%Y_%m_%d')}.log"
+        fou = Path(fou).resolve()
+        if fou.is_dir():
+            fou = fou / f"{date.today().strftime('%Y_%m_%d')}.log"
 
         fou_handler = logging.FileHandler(fou)
         fou_handler.setLevel(level)
