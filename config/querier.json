@@ -1,7 +1,7 @@
 [
   {
     "name": "main",
-    "driver": "PostgreSQL ODBC Driver(ANSI)",
+    "driver": "PostgreSQL ANSI",
     "server": "127.0.0.1",
     "port": 5432,
     "database": "postgres",

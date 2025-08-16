@@ -1,11 +1,10 @@
 /.idea/
 /.venv/
-.pytest_cache/
 __pycache__/
 
 /DDTs/
 /log/
 /res/
 
-/scheme/*.dump
-/scheme/*.xlsx
+*.dump
+*.xlsx

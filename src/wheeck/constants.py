@@ -22,7 +22,7 @@ PATTERN_CITY_SX = r"Luogo di partenza: .+\r\n([\w\t \.\&\-'\/]+)\r\n(?:\d{5}) ([
 PATTERN_QUANTITY = r'(?:Quantità Prezzo\r\n.+)? (?:L|KG) ([\d\.]+),000\s'
 PATTERN_VEHICLE = r'Peso soggetto accisa\r\n([\w\d]{7})\r\n([\w ]+)?\r?\n?Targa automezzo'
 
-CMD_BACKUP_DB = f"pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres -n wheeck -w -c -F c -f \"{PATH_SCHEME}/wheeck.bak.dump\""
+CMD_BACKUP_DB = f'pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres -n wheeck -w -c -F c -f \"{PATH_SCHEME}/wheeck.bak.dump\"'
 
 OVERVIEW_DEFAULT_FONT = 'Arial'
 OVERVIEW_FORMATS = {
@@ -47,14 +47,16 @@ QUERY_INSERT_DELIVERY = """\
         document_source,
         page_number,
         recording_date
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ;
 """
 QUERY_INSERT_WARNING = """\
     INSERT INTO wheeck.delivery_warning (
         message_genre,
         message_text
     ) VALUES (?, ?)
-    RETURNING id;
+    RETURNING id
+    ;
 """
 QUERY_INSERT_DISCARD = """\
     INSERT INTO wheeck.delivery_discard (
@@ -72,12 +74,14 @@ QUERY_INSERT_DISCARD = """\
         page_number,
         recording_date,
         id_warning_message
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ;
 """
 QUERY_UPDATE_WARNING = """\
     UPDATE wheeck.delivery_warning
     SET status = FALSE
-    WHERE id = ?;
+    WHERE id = ?
+    ;
 """
 QUERY_GET_DISCARD = """\
     SELECT document_number,
@@ -94,18 +98,21 @@ QUERY_GET_DISCARD = """\
     FROM wheeck.delivery_discard
     WHERE status IS TRUE
         AND document_source = ?
-        AND page_number = ?;
+        AND page_number = ?
+    ;
 """
 QUERY_GET_GAP = """\
     SELECT id
     FROM wheeck.vw_gap_message
     WHERE document_number = ?
-        AND document_year = ?;
+        AND document_year = ?
+    ;
 """
 QUERY_GET_DISTANCE = """\
     SELECT DISTINCT distance
     FROM wheeck.delivery
-    WHERE delivery_city = ?;
+    WHERE delivery_city = ?
+    ;
 """
 QUERY_CHECK_DUPLICATE = """\
     SELECT COUNT(*) AS nr_record
@@ -117,7 +124,8 @@ QUERY_CHECK_DUPLICATE = """\
         document_number = ?
         AND document_genre = ?
         AND EXTRACT(YEAR FROM document_date) = ?
-    );
+    )
+    ;
 """
 QUERY_CHECK_GAPS = """\
     SELECT dg.document_number,
@@ -128,7 +136,8 @@ QUERY_CHECK_GAPS = """\
             AND dg.document_year = gm.document_year
     WHERE dg.is_discard IS FALSE
         AND gm.document_number IS NULL
-    ORDER BY dg.document_year, dg.document_number;
+    ORDER BY dg.document_year, dg.document_number
+    ;
 """
 QUERY_GET_OVERVIEW = """\
     SELECT document_number,
@@ -141,7 +150,8 @@ QUERY_GET_OVERVIEW = """\
     FROM wheeck.delivery
     WHERE EXTRACT(YEAR FROM delivery_date) = ?
         AND EXTRACT(MONTH FROM delivery_date) = ?
-    ORDER BY document_number;
+    ORDER BY document_number
+    ;
 """
 QUERY_GET_SUMMARY = """\
     WITH year_summary AS (
@@ -193,7 +203,8 @@ QUERY_GET_SUMMARY = """\
         s1.document_number AS document_number_1
     FROM summary0 s0
         FULL JOIN summary1 s1 ON s0.row_num = s1.row_num
-    ORDER BY COALESCE(s0.row_num, s1.row_num);
+    ORDER BY COALESCE(s0.row_num, s1.row_num)
+    ;
 """
 QUERY_GET_LAST_OVERVIEWS = """\
     SELECT DISTINCT EXTRACT(YEAR FROM delivery_date)::INT AS year,
@@ -201,5 +212,6 @@ QUERY_GET_LAST_OVERVIEWS = """\
     FROM wheeck.delivery 
     WHERE recording_date >= NOW() - INTERVAL '1' DAY
         AND recording_date < NOW()
-    ORDER BY 1, 2;
+    ORDER BY 1, 2
+    ;
 """

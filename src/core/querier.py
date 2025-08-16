@@ -15,6 +15,7 @@ class Querier:
     """
     The Querier object allows for run queries on the database and fetch the extracted data.
     """
+    # _cache_config: save in cache the database connection info to be reuse quickly during same run
     _cache_config: dict[str, dict] = {}
 
     FETCH_VAL: int = 10
@@ -54,13 +55,14 @@ class Querier:
         if not conn_str and cfg_in:
             cfg_in = Path(cfg_in).resolve()
 
+            # if input path is a directory search for default config filename
             if cfg_in.is_dir():
                 cfg_in = cfg_in / 'querier.json'
-
             if not cfg_in.is_file():
                 raise IOError(f'Querier: no config {cfg_in} found!')
 
             conn_in = f'{cfg_in}::{conn_name}'
+            # save connection info in cache class variable or use it if already there
             if not Querier._cache_config or conn_in not in Querier._cache_config:
                 Querier._cache_config[conn_in] = decode_json(cfg_in, name=conn_name)
             config = Querier._cache_config.get(conn_in)
@@ -79,6 +81,7 @@ class Querier:
             autocommit=save_changes
         )
         self._cursor: pyodbc.Cursor = self._connection.cursor()
+        # rows: contains the number of resultset rows after each query run
         self.rows: int = 0
 
     def __del__(self) -> None:
@@ -86,6 +89,9 @@ class Querier:
         self._connection.close()
 
     def __iter__(self) -> pyodbc.Cursor:
+        """
+        Exposes the cursor to loop directly on the object itself.
+        """
         return self._cursor
 
     @property
@@ -184,11 +190,13 @@ class Querier:
             ws = wb.active
             if sheet_name: ws.title = sheet_name
 
+            # write columns header in bold font from the columns name in the cursor
             for col_num, cell in enumerate(self.row_header(), start=1):
                 ws.cell(row=1, column=col_num).value = cell
                 ws.cell(row=1, column=col_num).font = Font(name=font_face, bold=True)
                 ws.cell(row=1, column=col_num).number_format = Querier._EXCEL_FORMATS.get(type(cell))
 
+            # write all columns data with their specific data types
             for row_num, row in enumerate(self._cursor, start=2):
                 for col_num, cell in enumerate(row, start=1):
                     ws.cell(row=row_num, column=col_num).value = cell
@@ -219,11 +227,15 @@ class LowQuerier(Querier):
             sqlite3.connect(database=conn_in, autocommit=save_changes)
             if save_changes else sqlite3.connect(database=conn_in)
         )
+        # make query execution return dictionary instead of simple tuple
         self._connection.row_factory = sqlite3.Row
         self._cursor: sqlite3.Cursor = self._connection.cursor()
         self.rows: int = 0
 
     def __iter__(self) -> sqlite3.Cursor:
+        """
+        Exposes the cursor to loop directly on the object itself.
+        """
         return super().__iter__()
 
     @property
@@ -250,6 +262,7 @@ class LowQuerier(Querier):
         :rtype: Querier
         """
         if len(args) == 1 and isinstance(args[0], (list, tuple, set)):
+            # if got only one iterable argument, the function will explode it in a single tuple
             args = tuple(args[0])
         return super().run(query, args)
 

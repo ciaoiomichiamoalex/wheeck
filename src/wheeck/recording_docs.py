@@ -46,6 +46,9 @@ class Delivery:
     id_warning_message: int = field(init=False, default=None)
 
     def __str__(self) -> str:
+        """
+        Return minify JSON string of the object.
+        """
         attributes = asdict(self)
         for key, value in attributes.items():
             if isinstance(value, datetime):
@@ -64,6 +67,7 @@ class Delivery:
             departure = tuple(decode_json(PATH_CFG_PRJ)['departure_coords'])
             geo: GeoMap = GeoMap(PATH_CFG_PRJ)
             destination = geo.search(self.delivery_city)
+            # calculate distance from delivery_city with GeoMap class
             self.distance = (geo.get_distance_from_coords(departure, destination)
                              if destination else None)
 
@@ -80,6 +84,9 @@ class Delivery:
 
 
 class MessageGenre(Enum):
+    """
+    The MessageGenre enum contains the warning message types with their text pattern.
+    """
     DISCARD = 'Page %(page)d of doc %(doc)s discarded for error on %(pattern)s [number: %(document_number)d, genre: %(document_genre)s, date: %(document_date)s]'
     GAP = 'Found gap for doc number %(document_number)d of year %(document_year)d'
     WARNING = 'Had similarity crash for %(genre)s %(record)s on page %(page)d of doc %(doc)s'
@@ -381,6 +388,7 @@ def check_gaps() -> int:
     gaps_num = querier.run(QUERY_CHECK_GAPS).rows
 
     for row in querier:
+        # save gap warning message for each new gap found
         save_warning(MessageGenre.GAP,
                      document_number=row.document_number,
                      document_year=row.document_year)
@@ -403,10 +411,12 @@ def check_similarity(source_record: str,
     logger.info('checking similarity for %s in %s...', source_record, source_enum)
     enum = dict.fromkeys(source_enum, 0.0)
     for record in enum:
+        # check the similarity match between two strings
         enum[record] = SequenceMatcher(None, record, source_record).ratio()
 
     max_score = sorted(enum, key=enum.get, reverse=True)[0]
     logger.info('found a similarity index of %s%% on %s', round(enum[max_score] * 100), source_record)
+    # return the desired one if the similarity ratio is greater than 50%
     return max_score if enum[max_score] > 0.5 else source_record
 
 

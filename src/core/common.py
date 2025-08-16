@@ -26,10 +26,12 @@ def decode_json(json_in: str | Path,
 
     res = [
         obj for obj in res
+        # check key and value from input arguments, or just key if value is None
         if all((value is None and key in obj)
                or (obj.get(key) == value)
                for key, value in kwargs.items())
     ]
+    # return matching objects as a list or single dictionary
     return res[0] if res and single else res if res else None
 
 
@@ -56,6 +58,7 @@ def get_logger(fou: str | Path,
         logger.setLevel(logging.DEBUG)
 
         fou = Path(fou).resolve()
+        # if input path is a directory will be created a today's log filename
         if fou.is_dir():
             fou = fou / f"{date.today().strftime('%Y_%m_%d')}.log"
 
@@ -68,6 +71,7 @@ def get_logger(fou: str | Path,
         logger.addHandler(fou_handler)
 
         if console:
+            # print on console the error or higher log
             console_handler = logging.StreamHandler()
             console_handler.setLevel(logging.ERROR)
             console_handler.setFormatter(logging.Formatter(
