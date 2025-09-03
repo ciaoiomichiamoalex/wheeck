@@ -53,7 +53,7 @@ def generate_overview(year: int = date.today().year,
                 ws.cell(row=row_num, column=1).number_format = OVERVIEW_FORMATS[date]
 
         logger.info('saving overview for date %d-%02d... [%s]',
-                    year, month, overview_name.rsplit('/', maxsplit=1)[-1])
+                    year, month, overview_name.name)
         wb.save(overview_name)
     else: logger.info('no delivery found in date %d-%02d... skipping overview!', year, month)
     del querier
@@ -89,7 +89,7 @@ def generate_summary(year: int = date.today().year) -> None:
                 ws.cell(row=row_num, column=col_num).alignment = Alignment(horizontal='center')
                 ws.cell(row=row_num, column=col_num).number_format = OVERVIEW_FORMATS[type(cell)]
 
-        logger.info('saving summary for year %d... [%s]', year, summary_name.rsplit('/', maxsplit=1)[-1])
+        logger.info('saving summary for year %d... [%s]', year, summary_name.name)
         wb.save(summary_name)
     else: logger.info('no delivery found in year %d... skipping summary!', year)
     del querier

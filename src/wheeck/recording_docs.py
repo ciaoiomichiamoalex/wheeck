@@ -107,7 +107,7 @@ def doc_scanner(working_doc: str | Path,
     querier: Querier = Querier(cfg_in=PATH_CFG, save_changes=True)
     # working_doc: path to document with suffix '.recording' (es. c:/source/wheeck/DDTs/2024_01_DDT_0001_0100.recording.pdf)
     # working_doc_name: basename of working_doc without suffix
-    working_doc_name = working_doc.replace('.recording', '').rsplit('/', maxsplit=1)[-1]
+    working_doc_name = working_doc.stem.removesuffix('.recording') + working_doc.suffix
 
     # doc: raw PDF doc
     doc = pypdfium2.PdfDocument(working_doc)
@@ -309,7 +309,7 @@ def doc_scanner(working_doc: str | Path,
 
             discarded_doc = discard_doc(working_doc, working_page)
             logger.info('saving discard doc of page %d on %s... [%s]',
-                        working_page, working_doc_name, discarded_doc.rsplit('/', maxsplit=1)[-1])
+                        working_page, working_doc_name, discarded_doc.name)
             discarded_pages.restart()
 
         # check if there is a warning gap to update status
@@ -327,7 +327,7 @@ def doc_scanner(working_doc: str | Path,
 
 
 def discard_doc(working_doc: str | Path,
-                working_page: int) -> str:
+                working_page: int) -> Path:
     """
     Generate a new PDF document by extracting a single page from another.
 
@@ -347,7 +347,7 @@ def discard_doc(working_doc: str | Path,
 
     discard.import_pages(doc, [working_page - 1])
     # discarded_doc: path to the new document (es. c:/source/wheeck/DDTs/discarded/2024_01_DDT_0001_0100_P001.pdf)
-    discarded_doc = PATH_DISCARDED_DIR / f"{working_doc.replace('.recording.pdf', '').rsplit('/', maxsplit=1)[-1]}_P{working_page:0>3}.pdf"
+    discarded_doc = PATH_DISCARDED_DIR / f"{working_doc.stem.removesuffix('.recording')}_P{working_page:0>3}.pdf"
     discard.save(discarded_doc)
 
     discard.close()
@@ -469,7 +469,7 @@ def run() -> None:
 
         logger.info('JOB END: worked %d pages in %s [%d discarded pages]', worked_pages, doc, discarded_pages)
         # make backup copy of worked document if defined in the configuration
-        if not re.search(PATTERN_DISCARD_DOC, working_doc.replace('.recording', '').rsplit('/', maxsplit=1)[-1]):
+        if not re.search(PATTERN_DISCARD_DOC, working_doc.stem.removesuffix('.recording') + working_doc.suffix):
             backup_dir = decode_json(PATH_CFG_PRJ).get('backup_dir')
             if backup_dir:
                 logger.info('copying worked doc %s in backup dir...', doc)
