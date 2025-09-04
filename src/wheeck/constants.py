@@ -50,12 +50,44 @@ QUERY_INSERT_DELIVERY = """\
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ;
 """
-QUERY_INSERT_WARNING = """\
-    INSERT INTO wheeck.delivery_warning (
-        message_genre,
-        message_text
-    ) VALUES (?, ?)
-    RETURNING id
+
+QUERY_CHECK_DUPLICATE = """\
+    SELECT COUNT(*) AS nr_record
+    FROM wheeck.delivery
+    WHERE (
+        document_source = ?
+        AND page_number = ?
+    ) OR (
+        document_number = ?
+        AND document_genre = ?
+        AND EXTRACT(YEAR FROM document_date) = ?
+    )
+    ;
+"""
+
+QUERY_GET_DISTANCE = """\
+    SELECT DISTINCT distance
+    FROM wheeck.delivery
+    WHERE delivery_city = ?
+    ;
+"""
+
+QUERY_GET_DISCARD = """\
+    SELECT document_number,
+        document_genre,
+        document_date,
+        company_name,
+        delivery_city,
+        quantity,
+        delivery_date,
+        vehicle,
+        vehicle_driver,
+        distance,
+        id_warning_message
+    FROM wheeck.delivery_discard
+    WHERE status IS TRUE
+        AND document_source = ?
+        AND page_number = ?
     ;
 """
 QUERY_INSERT_DISCARD = """\
@@ -77,56 +109,22 @@ QUERY_INSERT_DISCARD = """\
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ;
 """
+
+QUERY_INSERT_WARNING = """\
+    INSERT INTO wheeck.delivery_warning (
+        message_genre,
+        message_text
+    ) VALUES (?, ?)
+    RETURNING id
+    ;
+"""
 QUERY_UPDATE_WARNING = """\
     UPDATE wheeck.delivery_warning
     SET status = FALSE
     WHERE id = ?
     ;
 """
-QUERY_GET_DISCARD = """\
-    SELECT document_number,
-        document_genre,
-        document_date,
-        company_name,
-        delivery_city,
-        quantity,
-        delivery_date,
-        vehicle,
-        vehicle_driver,
-        distance,
-        id_warning_message
-    FROM wheeck.delivery_discard
-    WHERE status IS TRUE
-        AND document_source = ?
-        AND page_number = ?
-    ;
-"""
-QUERY_GET_GAP = """\
-    SELECT id
-    FROM wheeck.vw_gap_message
-    WHERE document_number = ?
-        AND document_year = ?
-    ;
-"""
-QUERY_GET_DISTANCE = """\
-    SELECT DISTINCT distance
-    FROM wheeck.delivery
-    WHERE delivery_city = ?
-    ;
-"""
-QUERY_CHECK_DUPLICATE = """\
-    SELECT COUNT(*) AS nr_record
-    FROM wheeck.delivery
-    WHERE (
-        document_source = ?
-        AND page_number = ?
-    ) OR (
-        document_number = ?
-        AND document_genre = ?
-        AND EXTRACT(YEAR FROM document_date) = ?
-    )
-    ;
-"""
+
 QUERY_CHECK_GAPS = """\
     SELECT dg.document_number,
         dg.document_year
@@ -139,6 +137,14 @@ QUERY_CHECK_GAPS = """\
     ORDER BY dg.document_year, dg.document_number
     ;
 """
+QUERY_GET_GAP = """\
+    SELECT id
+    FROM wheeck.vw_gap_message
+    WHERE document_number = ?
+        AND document_year = ?
+    ;
+"""
+
 QUERY_GET_OVERVIEW = """\
     SELECT document_number,
         document_date,
