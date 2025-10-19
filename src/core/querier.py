@@ -119,7 +119,7 @@ class Querier:
         """
         self.rows = (
             self._cursor.execute(query, *args).rowcount
-            if args and set(args) != {None}
+            if args and any(val is not None for val in args)
             else self._cursor.execute(query).rowcount
         )
         return self
