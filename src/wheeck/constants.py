@@ -18,7 +18,7 @@ PATTERN_DISCARD_DOC = r'^(\d{4}_\d{2}_DDT_\d{4}_\d{4})_P(\d{3})(?:_P\d{3})*\.pdf
 
 PATTERN_DOC_NUMBER = r'Num\. D\.D\.T\. ([\d\.]+)\/(\w{2}) Data D\.D\.T\. (\d{2}\/\d{2}\/\d{4}) Pag'
 PATTERN_CITY_DX = r"Luogo di consegna\r\n([\w\t \.\&\-'\/\(\)]+)\r\n.+\r\n(?:\d{0,5}) ?([\w\t '\-\.]+) \(?(?:\w{2})\)?\r\nTelefono"
-PATTERN_CITY_SX = r"Luogo di partenza: .+\r\n([\w\t \.\&\-'\/]+)\r\n(?:\d{5}) ([\w\t '\-\.]+) \(?(?:\w{2})\)?\r\n"
+PATTERN_CITY_SX = r"Luogo di partenza: .+\r\n([\w\t \.\&\-'\/,]+)\r\n(?:\d{5}) ([\w\t '\-\.]+) \(?(?:\w{2})\)?\r\n"
 PATTERN_QUANTITY = r'(?:Quantità Prezzo\r\n.+)? (?:L|KG) ([\d\.]+),000\s'
 PATTERN_VEHICLE = r'Peso soggetto accisa\r\n([\w\d]{7})\r\n([\w ]+)?\r?\n?Targa automezzo'
 
