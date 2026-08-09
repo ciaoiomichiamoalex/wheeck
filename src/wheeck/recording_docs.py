@@ -548,7 +548,16 @@ def run() -> None:
 
         # worked_pages: total number of pages in working_doc
         # discarded_pages: total number of pages with error in working_doc
-        worked_pages, discarded_pages = doc_scanner(working_doc, job_begin)
+        try: worked_pages, discarded_pages = doc_scanner(working_doc, job_begin)
+        except Exception:
+            logger.exception('JOB FAILED: doc %s rolled back, nothing was saved... restoring it in DDTs dir, it will be reprocessed on every run until it succeeds!', doc)
+            # restoring the original name makes PATTERN_WORKING_DOC match the doc again, so the next run
+            # reprocesses it from scratch against an empty database state, leaving it as '.recording.pdf'
+            # would make run() skip it forever [the pypdfium2 handle is already released by doc_scanner]
+            try: shutil.move(working_doc, PATH_WORKING_DIR / doc)
+            except OSError as error: logger.critical('error on restoring doc %s for reprocessing! [%s]', doc, error)
+            # skipping both the backup copy and the move in the recorded dir, the previous docs stay recorded
+            continue
 
         logger.info('JOB END: worked %d pages in %s [%d discarded pages]', worked_pages, doc, discarded_pages)
         # make backup copy of worked document if defined in the configuration
