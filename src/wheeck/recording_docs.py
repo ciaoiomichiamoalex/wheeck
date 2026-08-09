@@ -117,7 +117,8 @@ def doc_scanner(working_doc: str | Path,
     :return: The number of worked pages and discarded pages.
     :rtype: tuple[int, int]
     """
-    querier: Querier = Querier(cfg_in=PATH_CFG, save_changes=True)
+    # save_changes=False keeps auto-commit OFF: an implicit transaction opens on the first executed statement
+    querier: Querier = Querier(cfg_in=PATH_CFG)
     # working_doc: path to document with suffix '.recording' (es. c:/source/wheeck/DDTs/2024_01_DDT_0001_0100.recording.pdf)
     # working_doc_name: basename of working_doc without suffix
     working_doc_name = working_doc.stem.removesuffix('.recording') + working_doc.suffix
@@ -126,6 +127,8 @@ def doc_scanner(working_doc: str | Path,
     doc = pypdfium2.PdfDocument(working_doc)
     # doc_pages: total number of pages in working_doc
     doc_pages = len(doc)
+    # discarded_docs: PDFs written under DDTs/discarded by THIS run, to be removed on rollback (es. [c:/source/wheeck/DDTs/discarded/2024_01_DDT_0001_0100_P001.pdf])
+    discarded_docs: list[Path] = []
     # discarded_pages: all information on pages with errors [anonymous class]
     discarded_pages = type('DiscardedPages', (object,), {
         # number: total number of pages with errors
@@ -137,45 +140,35 @@ def doc_scanner(working_doc: str | Path,
                                  setattr(self, 'on_error', None))
     })()
 
-    # working_page: current number page
-    # page: raw PDF page
-    for working_page, page in enumerate(doc, start=1):
-        logger.info('scanning on page %d of %s...', working_page, working_doc_name)
-        text = page.get_textpage().get_text_bounded()
+    try:
+        # working_page: current number page
+        # page: raw PDF page
+        for working_page, page in enumerate(doc, start=1):
+            logger.info('scanning on page %d of %s...', working_page, working_doc_name)
+            text = page.get_textpage().get_text_bounded()
 
-        # delivery: information obtained from the page
-        delivery: Delivery = Delivery(working_doc_name, working_page, job_begin)
+            # delivery: information obtained from the page
+            delivery: Delivery = Delivery(working_doc_name, working_page, job_begin)
 
-        # getting document number, document genre and document date
-        logger.info('searching for PATTERN_DOC_NUMBER on page %d of %s...', working_page, working_doc_name)
-        search = re.search(PATTERN_DOC_NUMBER, text)
-        if search:
-            delivery.document_number = int(search.group(1).replace('.', ''))
-            delivery.document_genre = search.group(2).upper()
-            delivery.document_date = datetime.strptime(search.group(3), '%d/%m/%Y').date()
+            # getting document number, document genre and document date
+            logger.info('searching for PATTERN_DOC_NUMBER on page %d of %s...', working_page, working_doc_name)
+            search = re.search(PATTERN_DOC_NUMBER, text)
+            if search:
+                delivery.document_number = int(search.group(1).replace('.', ''))
+                delivery.document_genre = search.group(2).upper()
+                delivery.document_date = datetime.strptime(search.group(3), '%d/%m/%Y').date()
 
-            logger.info('searching ok on page %d of %s! [%d, %s, %s]', working_page, working_doc_name,
-                        delivery.document_number, delivery.document_genre, delivery.document_date)
-        else:
-            logger.error('discarding page %d of %s for error on PATTERN_DOC_NUMBER...',
-                         working_page, working_doc_name)
-            discarded_pages.on_error = ('PATTERN_DOC_NUMBER' if not discarded_pages.on_error
-                                        else f'{discarded_pages.on_error}, PATTERN_DOC_NUMBER')
+                logger.info('searching ok on page %d of %s! [%d, %s, %s]', working_page, working_doc_name,
+                            delivery.document_number, delivery.document_genre, delivery.document_date)
+            else:
+                logger.error('discarding page %d of %s for error on PATTERN_DOC_NUMBER...',
+                             working_page, working_doc_name)
+                discarded_pages.on_error = ('PATTERN_DOC_NUMBER' if not discarded_pages.on_error
+                                            else f'{discarded_pages.on_error}, PATTERN_DOC_NUMBER')
 
-        # getting delivery city
-        logger.info('searching for PATTERN_CITY_DX on page %d of %s...', working_page, working_doc_name)
-        search = re.search(PATTERN_CITY_DX, text)
-        if search:
-            delivery.company_name = search.group(1).upper().strip()
-            delivery.delivery_city = search.group(2).upper().strip()
-
-            logger.info('searching ok on page %d of %s! [%s, %s]',
-                        working_page, working_doc_name, delivery.company_name, delivery.delivery_city)
-        else:
-            logger.warning('error on PATTERN_CITY_DX on page %d of %s... moving on PATTERN_CITY_SX!',
-                           working_page, working_doc_name)
-            # search on left side if there isn't on the right side of the document
-            search = re.search(PATTERN_CITY_SX, text)
+            # getting delivery city
+            logger.info('searching for PATTERN_CITY_DX on page %d of %s...', working_page, working_doc_name)
+            search = re.search(PATTERN_CITY_DX, text)
             if search:
                 delivery.company_name = search.group(1).upper().strip()
                 delivery.delivery_city = search.group(2).upper().strip()
@@ -183,159 +176,205 @@ def doc_scanner(working_doc: str | Path,
                 logger.info('searching ok on page %d of %s! [%s, %s]',
                             working_page, working_doc_name, delivery.company_name, delivery.delivery_city)
             else:
-                logger.error('discarding page %d of %s for error on PATTERN_CITY...', working_page, working_doc_name)
-                discarded_pages.on_error = ('PATTERN_CITY' if not discarded_pages.on_error
-                                            else f'{discarded_pages.on_error}, PATTERN_CITY')
+                logger.warning('error on PATTERN_CITY_DX on page %d of %s... moving on PATTERN_CITY_SX!',
+                               working_page, working_doc_name)
+                # search on left side if there isn't on the right side of the document
+                search = re.search(PATTERN_CITY_SX, text)
+                if search:
+                    delivery.company_name = search.group(1).upper().strip()
+                    delivery.delivery_city = search.group(2).upper().strip()
 
-        # getting quantity
-        logger.info('searching for PATTERN_QUANTITY on page %d of %s...', working_page, working_doc_name)
-        search = re.search(PATTERN_QUANTITY, text)
-        if search:
-            delivery.quantity = int(search.group(1).replace('.', ''))
-
-            logger.info('searching ok on page %d of %s! [%d]', working_page, working_doc_name, delivery.quantity)
-        else:
-            logger.error('discarding page %d of %s for error on PATTERN_QUANTITY...', working_page, working_doc_name)
-            discarded_pages.on_error = ('PATTERN_QUANTITY' if not discarded_pages.on_error
-                                        else f'{discarded_pages.on_error}, PATTERN_QUANTITY')
-
-        # duplicate document date in delivery date
-        logger.info('copying delivery date from document date on page %d of %s...', working_page, working_doc_name)
-        delivery.delivery_date = delivery.document_date
-
-        # getting vehicle and driver
-        logger.info('searching for PATTERN_VEHICLE on page %d of %s...', working_page, working_doc_name)
-        search = re.search(PATTERN_VEHICLE, text)
-        if search:
-            vehicle = search.group(1).upper()
-            driver = search.group(2).upper() if search.group(2) else None
-
-            members = decode_json(PATH_CFG_PRJ)['members']
-            vehicles_enum = [e['vehicle'] for e in members if e['vehicle']]
-            drivers_enum = [e['driver'] for e in members if e['driver']]
-
-            # check vehicle and driver with the possible value in wheeck.json
-            delivery.vehicle = (vehicle if vehicle in vehicles_enum
-                                else check_similarity(vehicle, vehicles_enum))
-            if delivery.vehicle not in vehicles_enum:
-                logger.warning('saving delivery warning for similarity crash on vehicle %s for page %d of %s...',
-                               delivery.vehicle, working_page, working_doc_name)
-                save_warning(MessageGenre.WARNING,
-                             genre='vehicle',
-                             record=delivery.vehicle,
-                             page=delivery.page_number,
-                             doc=delivery.document_source)
-
-            if driver in drivers_enum: delivery.vehicle_driver = driver
-            else:
-                if driver == vehicle or driver in vehicles_enum: driver = None
-
-                calc_driver = check_similarity(driver, drivers_enum) if driver else None
-                if driver and driver != calc_driver: delivery.vehicle_driver = calc_driver
-                else: delivery.vehicle_driver = next((e['driver'] for e in members
-                                                      if e['vehicle'] == delivery.vehicle), None)
-
-            if delivery.vehicle_driver not in drivers_enum:
-                logger.warning('saving delivery warning for similarity crash on driver %s for page %d of %s...',
-                               delivery.vehicle_driver, working_page, working_doc_name)
-                save_warning(MessageGenre.WARNING,
-                             genre='driver',
-                             record=delivery.vehicle_driver,
-                             page=delivery.page_number,
-                             doc=delivery.document_source)
-
-            logger.info('searching ok on page %d of %s! [%s, %s]',
-                        working_page, working_doc_name, delivery.vehicle, delivery.vehicle_driver)
-        else:
-            logger.error('discarding page %d of %s for error on PATTERN_VEHICLE...', working_page, working_doc_name)
-            discarded_pages.on_error = ('PATTERN_VEHICLE' if not discarded_pages.on_error
-                                        else f'{discarded_pages.on_error}, PATTERN_VEHICLE')
-
-        # check if is already a discard document
-        search = re.search(PATTERN_DISCARD_DOC, working_doc_name)
-        if search:
-            # discard_doc_source: basename of the discard document (es. 2024_01_DDT_0001_0100.pdf)
-            discard_doc_source = f'{search.group(1)}.pdf'
-            # discard_page_number: the number after the first '_P' in the discard document name
-            discard_page_number = int(search.group(2))
-            logger.info('working doc %s is already a discard doc, source is %s on page %d...',
-                        working_doc_name, discard_doc_source, discard_page_number)
-
-            is_discard = querier.run(QUERY_GET_DISCARD, discard_doc_source, discard_page_number).rows
-            # check if there is already a discard record on database
-            if is_discard and discarded_pages.on_error:
-                discard = querier.fetch(Querier.FETCH_ONE)
-                logger.info('found discard record of %s... [message id: %d]', working_doc_name, discard.id_warning_message)
-
-                if None not in discard:
-                    delivery.charge(dict(zip(querier.row_header(), discard)))
-                    discarded_pages.on_error = None
+                    logger.info('searching ok on page %d of %s! [%s, %s]',
+                                working_page, working_doc_name, delivery.company_name, delivery.delivery_city)
                 else:
-                    logger.error('still found NULL cell on saving delivery from delivery discard in doc %s... skipping record!', working_doc_name)
-                    delivery.id_warning_message = discard.id_warning_message
+                    logger.error('discarding page %d of %s for error on PATTERN_CITY...', working_page, working_doc_name)
+                    discarded_pages.on_error = ('PATTERN_CITY' if not discarded_pages.on_error
+                                                else f'{discarded_pages.on_error}, PATTERN_CITY')
 
-        logger.info('searching for duplicate on page %d of %s...', working_page, working_doc_name)
-        if not discarded_pages.on_error and check_duplicate(delivery):
-            logger.error('discarding page %d of %s for error on CHECK_DUPLICATE...', working_page, working_doc_name)
-            discarded_pages.on_error = 'CHECK_DUPLICATE'
-            # don't save discard record on database in case of duplication
-            delivery.id_warning_message = -1
-        elif not delivery.distance:
-            # check if distance for this city is already calculated on database
-            logger.info('checking if the distance for %s has already been calculated...', delivery.delivery_city)
-            if querier.run(QUERY_GET_DISTANCE, delivery.delivery_city).rows == 1:
-                delivery.distance = querier.fetch(Querier.FETCH_VAL)
+            # getting quantity
+            logger.info('searching for PATTERN_QUANTITY on page %d of %s...', working_page, working_doc_name)
+            search = re.search(PATTERN_QUANTITY, text)
+            if search:
+                delivery.quantity = int(search.group(1).replace('.', ''))
+
+                logger.info('searching ok on page %d of %s! [%d]', working_page, working_doc_name, delivery.quantity)
             else:
-                logger.info('calculating distance from %s for page %d of %s...',
-                            delivery.delivery_city, working_page, working_doc_name)
-                delivery.calculate_distance()
-                # waiting before next open route service API call (40 call/min)
-                time.sleep(1.5)
+                logger.error('discarding page %d of %s for error on PATTERN_QUANTITY...', working_page, working_doc_name)
+                discarded_pages.on_error = ('PATTERN_QUANTITY' if not discarded_pages.on_error
+                                            else f'{discarded_pages.on_error}, PATTERN_QUANTITY')
 
-        # save delivery record
-        if not discarded_pages.on_error:
-            logger.info('saving delivery %s from page %d of %s...', delivery, working_page, working_doc_name)
-            if querier.run(QUERY_INSERT_DELIVERY, *astuple(delivery)[:-1]).rows != 1:
-                logger.critical('error on saving delivery record from page %d of %s... check the database connection!',
-                                working_page, working_doc_name)
-                logger.error('discarding page %d of %s for error on INSERT_DELIVERY...',
-                             working_page, working_doc_name)
-                discarded_pages.on_error = 'INSERT_DELIVERY'
-            elif delivery.id_warning_message and querier.run(QUERY_UPDATE_WARNING, delivery.id_warning_message).rows != 1:
-                logger.critical('error on updating delivery warning status from page %d of %s... check the database connection! [message id: %d]',
-                                working_page, working_doc_name, delivery.id_warning_message)
+            # duplicate document date in delivery date
+            logger.info('copying delivery date from document date on page %d of %s...', working_page, working_doc_name)
+            delivery.delivery_date = delivery.document_date
 
-        # check if there is errors on page
-        if discarded_pages.on_error:
-            if not delivery.id_warning_message:
-                logger.info('saving discard record and warning message for page %d of %s for errors on %s...',
-                            working_page, working_doc_name, discarded_pages.on_error)
-                delivery.id_warning_message = save_warning(MessageGenre.DISCARD,
-                                                           page=delivery.page_number,
-                                                           doc=delivery.document_source,
-                                                           pattern=discarded_pages.on_error,
-                                                           document_number=delivery.document_number,
-                                                           document_genre=delivery.document_genre,
-                                                           document_date=delivery.document_date)
-                if delivery.id_warning_message != -1 and querier.run(QUERY_INSERT_DISCARD, *astuple(delivery)).rows != 1:
-                    logger.critical('error on saving delivery discard record... check the database connection! [message id: %d]', delivery.id_warning_message)
+            # getting vehicle and driver
+            logger.info('searching for PATTERN_VEHICLE on page %d of %s...', working_page, working_doc_name)
+            search = re.search(PATTERN_VEHICLE, text)
+            if search:
+                vehicle = search.group(1).upper()
+                driver = search.group(2).upper() if search.group(2) else None
 
-            discarded_doc = discard_doc(working_doc, working_page)
-            logger.info('saving discard doc of page %d on %s... [%s]',
-                        working_page, working_doc_name, discarded_doc.name)
-            discarded_pages.restart()
+                members = decode_json(PATH_CFG_PRJ)['members']
+                vehicles_enum = [e['vehicle'] for e in members if e['vehicle']]
+                drivers_enum = [e['driver'] for e in members if e['driver']]
 
-        # check if there is a warning gap to update status
-        if querier.run(QUERY_GET_GAP, delivery.document_number, delivery.document_date.year).rows:
-            id_warning_gap = querier.fetch(Querier.FETCH_VAL)
-            logger.info('checking if page %d of %s is gap... ok! [message id: %d]',
-                        working_page, working_doc_name, id_warning_gap)
-            if querier.run(QUERY_UPDATE_WARNING, id_warning_gap).rows != 1:
-                logger.critical('error on updating warning gap status from page %d of %s... check the database connection! [message id: %d]',
+                # check vehicle and driver with the possible value in wheeck.json
+                delivery.vehicle = (vehicle if vehicle in vehicles_enum
+                                    else check_similarity(vehicle, vehicles_enum))
+                if delivery.vehicle not in vehicles_enum:
+                    logger.warning('saving delivery warning for similarity crash on vehicle %s for page %d of %s...',
+                                   delivery.vehicle, working_page, working_doc_name)
+                    save_warning(MessageGenre.WARNING, querier,
+                                 genre='vehicle',
+                                 record=delivery.vehicle,
+                                 page=delivery.page_number,
+                                 doc=delivery.document_source)
+
+                if driver in drivers_enum: delivery.vehicle_driver = driver
+                else:
+                    if driver == vehicle or driver in vehicles_enum: driver = None
+
+                    calc_driver = check_similarity(driver, drivers_enum) if driver else None
+                    if driver and driver != calc_driver: delivery.vehicle_driver = calc_driver
+                    else: delivery.vehicle_driver = next((e['driver'] for e in members
+                                                          if e['vehicle'] == delivery.vehicle), None)
+
+                if delivery.vehicle_driver not in drivers_enum:
+                    logger.warning('saving delivery warning for similarity crash on driver %s for page %d of %s...',
+                                   delivery.vehicle_driver, working_page, working_doc_name)
+                    save_warning(MessageGenre.WARNING, querier,
+                                 genre='driver',
+                                 record=delivery.vehicle_driver,
+                                 page=delivery.page_number,
+                                 doc=delivery.document_source)
+
+                logger.info('searching ok on page %d of %s! [%s, %s]',
+                            working_page, working_doc_name, delivery.vehicle, delivery.vehicle_driver)
+            else:
+                logger.error('discarding page %d of %s for error on PATTERN_VEHICLE...', working_page, working_doc_name)
+                discarded_pages.on_error = ('PATTERN_VEHICLE' if not discarded_pages.on_error
+                                            else f'{discarded_pages.on_error}, PATTERN_VEHICLE')
+
+            # check if is already a discard document
+            search = re.search(PATTERN_DISCARD_DOC, working_doc_name)
+            if search:
+                # discard_doc_source: basename of the discard document (es. 2024_01_DDT_0001_0100.pdf)
+                discard_doc_source = f'{search.group(1)}.pdf'
+                # discard_page_number: the number after the first '_P' in the discard document name
+                discard_page_number = int(search.group(2))
+                logger.info('working doc %s is already a discard doc, source is %s on page %d...',
+                            working_doc_name, discard_doc_source, discard_page_number)
+
+                is_discard = querier.run(QUERY_GET_DISCARD, discard_doc_source, discard_page_number).rows
+                # check if there is already a discard record on database
+                if is_discard and discarded_pages.on_error:
+                    discard = querier.fetch(Querier.FETCH_ONE)
+                    logger.info('found discard record of %s... [message id: %d]', working_doc_name, discard.id_warning_message)
+
+                    if None not in discard:
+                        delivery.charge(dict(zip(querier.row_header(), discard)))
+                        discarded_pages.on_error = None
+                    else:
+                        logger.error('still found NULL cell on saving delivery from delivery discard in doc %s... skipping record!', working_doc_name)
+                        delivery.id_warning_message = discard.id_warning_message
+
+            logger.info('searching for duplicate on page %d of %s...', working_page, working_doc_name)
+            if not discarded_pages.on_error and check_duplicate(delivery, querier):
+                logger.error('discarding page %d of %s for error on CHECK_DUPLICATE...', working_page, working_doc_name)
+                discarded_pages.on_error = 'CHECK_DUPLICATE'
+                # don't save discard record on database in case of duplication
+                delivery.id_warning_message = -1
+            # the delivery_city guard mirrors the one Delivery.calculate_distance() already applies to itself:
+            # on a PATTERN_CITY failure the city is None and QUERY_GET_DISTANCE would run with no bound
+            # parameter, raising a pyodbc error which must never turn a regular discard into a rollback
+            elif delivery.delivery_city and not delivery.distance:
+                # check if distance for this city is already calculated on database
+                logger.info('checking if the distance for %s has already been calculated...', delivery.delivery_city)
+                if querier.run(QUERY_GET_DISTANCE, delivery.delivery_city).rows == 1:
+                    delivery.distance = querier.fetch(Querier.FETCH_VAL)
+                else:
+                    logger.info('calculating distance from %s for page %d of %s...',
+                                delivery.delivery_city, working_page, working_doc_name)
+                    delivery.calculate_distance()
+                    # waiting before next open route service API call (40 call/min)
+                    time.sleep(1.5)
+
+            # save delivery record
+            if not discarded_pages.on_error:
+                logger.info('saving delivery %s from page %d of %s...', delivery, working_page, working_doc_name)
+                if querier.run(QUERY_INSERT_DELIVERY, *astuple(delivery)[:-1]).rows != 1:
+                    logger.critical('error on saving delivery record from page %d of %s... check the database connection!',
+                                    working_page, working_doc_name)
+                    raise RecordingError('INSERT_DELIVERY')
+                elif delivery.id_warning_message and querier.run(QUERY_UPDATE_WARNING, delivery.id_warning_message).rows != 1:
+                    logger.critical('error on updating delivery warning status from page %d of %s... check the database connection! [message id: %d]',
+                                    working_page, working_doc_name, delivery.id_warning_message)
+
+            # check if there is errors on page
+            if discarded_pages.on_error:
+                if not delivery.id_warning_message:
+                    logger.info('saving discard record and warning message for page %d of %s for errors on %s...',
+                                working_page, working_doc_name, discarded_pages.on_error)
+                    delivery.id_warning_message = save_warning(MessageGenre.DISCARD, querier,
+                                                               page=delivery.page_number,
+                                                               doc=delivery.document_source,
+                                                               pattern=discarded_pages.on_error,
+                                                               document_number=delivery.document_number,
+                                                               document_genre=delivery.document_genre,
+                                                               document_date=delivery.document_date)
+                    # the '!= -1' check is defensive dead code: with a shared querier save_warning raises
+                    # instead of returning -1, and the -1 set on a duplicate never reaches this branch
+                    if delivery.id_warning_message != -1 and querier.run(QUERY_INSERT_DISCARD, *astuple(delivery)).rows != 1:
+                        logger.critical('error on saving delivery discard record... check the database connection! [message id: %d]', delivery.id_warning_message)
+                        raise RecordingError('INSERT_DISCARD')
+
+                # discarded_doc: path to the discard PDF of this page (es. c:/source/wheeck/DDTs/discarded/2024_01_DDT_0001_0100_P001.pdf)
+                discarded_doc = discarded_doc_path(working_doc, working_page)
+                # is_new_discard: True when no discard PDF for this page exists yet, so only files created by this run are removed on rollback
+                is_new_discard = not discarded_doc.exists()
+                # registered before writing, so even a partially written PDF is compensated
+                if is_new_discard: discarded_docs.append(discarded_doc)
+
+                discard_doc(working_doc, working_page)
+                logger.info('saving discard doc of page %d on %s... [%s]',
+                            working_page, working_doc_name, discarded_doc.name)
+                discarded_pages.restart()
+
+            # check if there is a warning gap to update status, a page discarded on PATTERN_DOC_NUMBER has no
+            # document number to match a gap against and must never become a rollback trigger
+            if delivery.document_number is not None and delivery.document_date is not None:
+                if querier.run(QUERY_GET_GAP, delivery.document_number, delivery.document_date.year).rows:
+                    id_warning_gap = querier.fetch(Querier.FETCH_VAL)
+                    logger.info('checking if page %d of %s is gap... ok! [message id: %d]',
                                 working_page, working_doc_name, id_warning_gap)
+                    if querier.run(QUERY_UPDATE_WARNING, id_warning_gap).rows != 1:
+                        logger.critical('error on updating warning gap status from page %d of %s... check the database connection! [message id: %d]',
+                                        working_page, working_doc_name, id_warning_gap)
 
-    doc.close()
-    del querier
+        # the commit is the last statement of the try body: a failing commit triggers the rollback attempt
+        # and the discard PDF cleanup of the handler below too
+        querier.save_changes(True)
+        logger.info('committed %d pages of %s! [%d discarded pages]',
+                    doc_pages, working_doc_name, discarded_pages.number)
+    except Exception:
+        logger.critical('rolling back the whole doc %s... nothing will be saved!', working_doc_name)
+        # the rollback has its own handler so a dead connection cannot replace the original exception
+        try: querier.save_changes(False)
+        except Exception: logger.critical('error on rollback of %s... check the database connection!', working_doc_name)
+
+        # the filesystem is not transactional: remove the discard PDFs written by this run
+        for discarded in discarded_docs:
+            logger.info('removing discard doc %s after rollback...', discarded.name)
+            try: discarded.unlink(missing_ok=True)
+            except OSError as error: logger.critical('error on removing discard doc %s! [%s]', discarded.name, error)
+        # re-raising is load-bearing: without it run() would treat the document as recorded and archive it
+        raise
+    finally:
+        doc.close()
+        # del only drops this reference: on the re-raise path the traceback still holds the querier in the
+        # check_duplicate / save_warning frames, so Querier.__del__ closes the connection once run() releases
+        # the exception. The ROLLBACK above is already done, so this is data-safe [core.Querier has no close()]
+        del querier
     return doc_pages, discarded_pages.number
 
 
@@ -358,14 +397,31 @@ def discard_doc(working_doc: str | Path,
     # discard: new raw PDF doc
     discard = pypdfium2.PdfDocument.new()
 
-    discard.import_pages(doc, [working_page - 1])
     # discarded_doc: path to the new document (es. c:/source/wheeck/DDTs/discarded/2024_01_DDT_0001_0100_P001.pdf)
-    discarded_doc = PATH_DISCARDED_DIR / f"{working_doc.stem.removesuffix('.recording')}_P{working_page:0>3}.pdf"
-    discard.save(discarded_doc)
-
-    discard.close()
-    doc.close()
+    discarded_doc = discarded_doc_path(working_doc, working_page)
+    try:
+        discard.import_pages(doc, [working_page - 1])
+        discard.save(discarded_doc)
+    finally:
+        # both handles are released on every path, a failure inside save() must not leak them
+        discard.close()
+        doc.close()
     return discarded_doc
+
+
+def discarded_doc_path(working_doc: str | Path,
+                       working_page: int) -> Path:
+    """
+    Build the path of the discard document generated from a single page of another document.
+
+    :param working_doc: Path to the source document.
+    :type working_doc: str | Path
+    :param working_page: Page number which must be extracted.
+    :type working_page: int
+    :return: The path to the discard document (es. c:/source/wheeck/DDTs/discarded/2024_01_DDT_0001_0100_P001.pdf).
+    :rtype: Path
+    """
+    return PATH_DISCARDED_DIR / f"{working_doc.stem.removesuffix('.recording')}_P{working_page:0>3}.pdf"
 
 
 def check_duplicate(delivery: Delivery,
