@@ -1,16 +1,30 @@
 ---
 phase: quick-260809-plo
 verified: 2026-08-09T17:21:44Z
+reverified: 2026-08-09T18:05:00Z
 status: human_needed
-score: 8/8 must-haves verified
+score: 8/8 must-haves verified (+5 new behaviours verified)
 overrides_applied: 0
+re_verification:
+  reason: "Source changed after the first verification: network calls moved out of the transaction, QUERY_CHECK_DISCARD guard, keyword-only querier, .failed.pdf fallback"
+  previous_status: human_needed
+  previous_score: 8/8
+  gaps_closed:
+    - "WARNING 1 of the first report (pre-loop region unguarded / pypdfium2 handle leak) is now structurally impossible: the handle is released before the transaction opens"
+    - "WARNING 3 of the first report (transaction held open across the 1.5s OpenRouteService throttle) is resolved by resolve_distances()"
+    - "WARNING 4 of the first report (uq_delivery_discard_document_source_page violation rolling back a re-processed document) is resolved by the QUERY_CHECK_DISCARD guard"
+  gaps_remaining: []
+  regressions: []
 human_verification:
-  - test: "Run the real pipeline on a test schema with a document that fails mid-way (es. temporarily point PATH_CFG at a copy of the schema and revoke INSERT on wheeck.delivery after the first page, or feed a PDF whose page 2 triggers a constraint violation), then query SELECT COUNT(*) FROM wheeck.delivery / delivery_discard / delivery_warning for that document_source."
+  - test: "Run the real pipeline on a test schema with a document that fails mid-way (es. revoke INSERT on wheeck.delivery after the first page, or feed a PDF whose page 2 triggers a constraint violation), then query SELECT COUNT(*) FROM wheeck.delivery / delivery_discard / delivery_warning for that document_source."
     expected: "Zero rows for that document_source in all three tables, no DDTs/discarded/*.pdf for it, and the file back in DDTs/ as <name>.pdf."
     why_human: "Requires a live psqlODBC connection and a database write; the verifier is read-only and the repo has no test suite. The rollback logic itself was proven with an in-process fake Querier, but the real pyodbc statement-level rollback across the single shared cursor can only be observed against Postgres."
-  - test: "On Windows, let a real document fail inside doc_scanner (real pypdfium2 handle open on <name>.recording.pdf) and check the log for 'restoring it in DDTs dir' without the following 'error on restoring doc ... [WinError 32]' critical."
-    expected: "The rename to <name>.pdf succeeds because finally: doc.close() released the pypdfium2 handle before run() moves the file."
+  - test: "On Windows, let a real document fail inside doc_scanner and check the log for 'restoring it in DDTs dir' without a following 'error on restoring doc ... [WinError 32]' critical."
+    expected: "The rename to <name>.pdf succeeds because the pypdfium2 handle was released by the extraction try/finally before the transaction even opened; the .failed.pdf fallback is never reached."
     why_human: "File-locking behaviour of pypdfium2 on Windows cannot be observed with a stubbed PdfDocument."
+  - test: "Process a multi-page document with several distinct delivery cities and time the run; watch the OpenRouteService calls in the log relative to the 'committed N pages' line."
+    expected: "Every 'calculating distance from ...' line appears BEFORE the first delivery INSERT, one per distinct city, and the transaction lifetime no longer includes the 1.5s throttles."
+    why_human: "The real ORS latency, the real distinct-city set of a production PDF and the server-side idle_in_transaction_session_timeout can only be observed on a live run."
 ---
 
 # Quick Task 260809-plo: Transaction management with rollback - Verification Report
@@ -18,121 +32,136 @@ human_verification:
 **Task Goal (user's words):** add transaction management so that a runtime error mid-flow rolls back and
 writes nothing to the database, while a fully processed flow commits — no more half-saved documents.
 **Verified:** 2026-08-09T17:21:44Z
-**Status:** human_needed (8/8 truths verified in the codebase; 2 items need a live end-to-end run)
-**Re-verification:** No — initial verification
+**Re-verified against the current source:** 2026-08-09T18:05:00Z
+**Status:** human_needed (8/8 original truths + 5 new behaviours verified; 3 items need a live run)
+
+## Re-verification scope
+
+The source changed after the first pass (uncommitted working-tree changes on top of commit `ab4457a`):
+text extraction and city-distance resolution moved **before** the transaction (`resolve_distances`,
+`city_distance`), a `QUERY_CHECK_DISCARD` pre-existing-discard guard was added, `save_warning`'s `querier`
+became keyword-only, the nested rollback handler uses `logger.exception`, and `run()` gained a
+`.failed.pdf` fallback. The simulation harness was rewritten for the new structure and re-run:
+**42/42 `doc_scanner` checks pass, 13/13 `run()` checks pass**, plus an extra
+`resolve_distances`-failure check. No regression found on any previously confirmed behaviour.
 
 ## Goal Achievement
 
 ### Observable Truths
 
-| #   | Truth (PLAN must_haves) | Status | Evidence |
-| --- | ----------------------- | ------ | -------- |
-| 1 | A runtime error while scanning page N leaves ZERO rows of that document in `delivery`, `delivery_discard`, `delivery_warning` | VERIFIED | Every write in `doc_scanner` goes through the single non-autocommit `querier` (`recording_docs.py:121`, writes at 227, 245, 305, 309, 318, 327, 346-350; grep confirms no other `Querier(` inside the loop). `except Exception:` calls `querier.save_changes(False)` (362). Simulation B: injected `rows=0` and an injected driver exception on page 2 both give `commits=0 rollbacks=1 committed_rows=0`, with page-1 rows in the rolled-back buffer. Simulation B3: the two `save_warning(MessageGenre.WARNING, querier, ...)` similarity rows (the early-in-the-loop case) are on the SAME connection (`1 connection`, `2 rolled back rows`, `0 committed`) — the old separate autocommit connection is gone. |
-| 2 | A document scanned without runtime errors commits exactly once, after the loop, with all its pages | VERIFIED | `querier.save_changes(True)` at 356 is the penultimate statement of the `try` body, after the `for` loop; AST gate proves `save_changes` appears in no loop body and `save_changes(True)` occurs exactly once. Simulation A (3 pages): `commits=1 rollbacks=0`, commit event fires at page 3 with no `WRITE_PENDING` after it, 9 rows across pages {1,2,3} in a single commit, 1 connection with `autocommit=False`. No mid-document commit is reachable: `save_warning`/`check_duplicate` never commit when a shared querier is passed (`own_querier` is False), and no other component (`geo`, `check_similarity`) touches the database. |
-| 3 | Documents already committed earlier in the same `run()` batch are not undone by a later document failing | VERIFIED | Each `doc_scanner` call constructs its own `Querier` and commits before returning; `run()` catches per-document (551-560) and `continue`s. Batch simulation: doc1 `commits=1 committed_rows=6 rolled_back=0` is unaffected while doc2 `commits=0 rolled_back=5` re-raises; the two connections are distinct objects. Filesystem side confirmed by run-simulation D7/D8. |
-| 4 | A page discarded by a failed `PATTERN_*` still writes discard + warning and commits — never a rollback trigger | VERIFIED | Simulation C over all four patterns (`PATTERN_DOC_NUMBER`, `PATTERN_CITY` with DX **and** SX failing, `PATTERN_QUANTITY`, `PATTERN_VEHICLE`): no exception, `commits=1 rollbacks=0`, return `(2, 1)`, discard warning + discard row committed for the discarded page. The three former crash sites are neutralised: `%(document_number)s` template (96, interpolated with `None` in gate 1), `elif delivery.delivery_city and not delivery.distance:` (290, avoids the `args=(None,)` collapse in `core/querier.py:120-124`), and `if delivery.document_number is not None and delivery.document_date is not None:` around the `QUERY_GET_GAP` block (345) — the simulation shows `gap_lookups=1` for the `PATTERN_DOC_NUMBER` case vs `2` for the others, i.e. the guard actually fires. `check_duplicate` is short-circuited by `not discarded_pages.on_error` (282), so `document_date.year` is never dereferenced on `None`. Schema confirms `delivery_discard.document_number/genre/date` nullable and `CHECK (quantity > 0)` / `CHECK (distance >= 0)` do not fire on NULL (`scheme/wheeck.sql:103-134`). |
-| 5 | On rollback the working file is renamed back to `<name>.pdf`, not moved to `DDTs/recorded/`, not copied to `backup_dir` | VERIFIED | `run()` handler 552-560: `logger.exception` → `shutil.move(working_doc, PATH_WORKING_DIR / doc)` inside its own `except OSError` → `continue`. Run-simulation D2/D3/D5/D6: the failed doc is back in `DDTs/` as `2024_01_DDT_0101_0200.pdf`, no `.recording.pdf` residue, absent from `recorded/` and from `backup/`, while the surrounding docs are archived. D4: the restored name matches `PATTERN_WORKING_DOC = ^\d{4}_\d{2}_DDT_\d{4}_\d{4}(?:_P\d{3})*\.pdf$` (which `.recording.pdf` does not). |
-| 6 | On rollback only the `DDTs/discarded/*.pdf` files THIS run created are deleted | VERIFIED | 332-336: `discarded_doc_path(...)` → `is_new_discard = not discarded_doc.exists()` → appended **before** `discard_doc()` writes, so a partial write is compensated too; handler unlinks with `missing_ok=True` inside `try/except OSError` (366-369). Simulation B4: the PDF created during the failed run is gone, a pre-existing PDF for another page of the same document survives. |
-| 7 | The pypdfium2 handle is released on every exit path, including the exception path, before the rename | VERIFIED (with a noted edge case) | `finally: doc.close()` (372-373) replaces the old post-loop `doc.close()`; simulation B shows `closed=1` on both exception flavours. `discard_doc` now closes both handles in `try/finally` (402-408). Edge case (WARNING below): lines 127-141 run *before* the `try`, so a failure in `len(doc)` would leave the handle open — DB-safe (no statement executed yet) but the rename could hit WinError 32. |
-| 8 | `check_gaps()` keeps its own connection and `save_warning()` still works without a shared Querier | VERIFIED | `check_gaps()` unchanged (455-471), signature `() -> int`, opens its own `Querier` and calls `save_warning` with keywords only — the `for row in querier:` / `save_warning` interleaving keeps two cursors as required (`core/querier.py:91` exposes the single `_cursor`). Spot-check: standalone `save_warning` opens `autocommit=True` and returns the id (77) on success and `-1` on `rows != 1` without raising; with a shared querier it raises `RecordingError('INSERT_WARNING')` and opens no new connection. |
+| #   | Truth (PLAN must_haves) | Status | Evidence against the CURRENT source |
+| --- | ----------------------- | ------ | ----------------------------------- |
+| 1 | A runtime error while scanning page N leaves ZERO rows of that document in `delivery`, `delivery_discard`, `delivery_warning` | VERIFIED (re-confirmed) | All writes still go through the single non-autocommit transaction querier (`recording_docs.py:190`; writes at 287, 305, 359, 363, 382, 391, 410-414). `except Exception:` → `querier.save_changes(False)` (426). Simulation B, both flavours (`rows=0` → `RecordingError`, injected driver exception) on page 2 of 3: `commits=0 rollbacks=1 committed_rows=0`, 5 rows discarded covering pages {1,2}. Simulation B3: the two early `save_warning(..., querier=querier, ...)` similarity rows are `INTO wheeck.delivery_warning` entries in the **rolled-back** buffer, not committed. |
+| 2 | A document scanned without runtime errors commits exactly once, after the loop, with all its pages | VERIFIED (re-confirmed) | `querier.save_changes(True)` at 420 is still the penultimate statement of the `try`; gate 2 AST assertions (single commit, none inside any loop) still pass. Simulation A: `commits=1 rollbacks=0`, the single COMMIT event fires at page 3 carrying 9 pending rows for pages {1,2,3}, and no write or autocommit event occurs after it. |
+| 3 | Documents already committed earlier in the same `run()` batch are not undone by a later document failing | VERIFIED (re-confirmed) | Simulation E1: doc1 `commits=1`, 6 committed rows, 0 rolled back; doc2 (failing) `rollbacks=1`, 5 rows lost, distinct connection object. `run()` still catches per document and `continue`s (616-630). |
+| 4 | A page discarded by a failed `PATTERN_*` still writes discard + warning and commits — never a rollback trigger | VERIFIED (re-confirmed, new code path) | Simulation C over all four patterns: no exception, `commits=1 rollbacks=0`, return `(2,1)`, discard warning + `delivery_discard` row committed for the discarded page. `PATTERN_CITY` (DX **and** SX failing) now takes the new `distances.get(None)` path: the committed `delivery_discard` row has `delivery_city=None` and `distance=None`, and no `city_distance` call is made for it — the previous `QUERY_GET_DISTANCE`-with-a-`None`-parameter hazard is gone by construction, not just guarded. The `PATTERN_DOC_NUMBER` case still shows `gap_lookups=1` vs `2` for the others, i.e. the `document_number is not None and document_date is not None` guard (409) still fires. |
+| 5 | On rollback the working file is renamed back to `<name>.pdf`, not moved to `DDTs/recorded/`, not copied to `backup_dir` | VERIFIED (re-confirmed) + NEW fallback verified | Run-simulation D1-D8 unchanged: file back as `2024_01_DDT_0101_0200.pdf`, no `.recording.pdf` residue, absent from `recorded/` and `backup/`, neighbours archived, `PATTERN_WORKING_DOC` matches the restored name. NEW D9-D13 with an injected `OSError` on the restore: the doc becomes `2024_01_DDT_0101_0200.failed.pdf`, no `.recording.pdf` is left, the `.failed.pdf` name does **not** match `PATTERN_WORKING_DOC` (explicit dead end rather than an invisible skip), the batch still completes and the failed doc is still absent from `recorded/` and `backup/`. |
+| 6 | On rollback only the `DDTs/discarded/*.pdf` files THIS run created are deleted | VERIFIED (re-confirmed) | 396-400 unchanged (`is_new_discard = not discarded_doc.exists()` registered before the write); simulation B4: the PDF created by the failed run is deleted, the pre-existing one for another page survives. |
+| 7 | The pypdfium2 handle is released on every exit path, including the exception path, before the rename | VERIFIED — now STRONGER | The handle no longer lives across the transaction at all: `doc = pypdfium2.PdfDocument(...)` / `try: pages_text = [...] finally: doc.close()` (179-182) runs **before** `resolve_distances` and before the `Querier` is created. Simulation N4: every `DOC_CLOSE` event precedes every `OPEN_CONNECTION`. Simulation N7 (extraction raises on page 2): the exception propagates, `doc_closed=1`, and **zero** connections are ever opened. The WARNING 1 of the first report (the unguarded pre-loop region) is therefore closed. |
+| 8 | `check_gaps()` keeps its own connection and `save_warning()` still works without a shared Querier | VERIFIED (re-confirmed) | `check_gaps()` untouched, signature `() -> int` (N14). N12: standalone `save_warning` opens its own `autocommit=True` connection and returns the id / the `-1` sentinel. N13: with a shared querier it raises `RecordingError('INSERT_WARNING')` and opens no connection. |
 
 **Score:** 8/8 truths verified
+
+### New Behaviours Verified
+
+| # | New behaviour | Status | Evidence |
+| - | ------------- | ------ | -------- |
+| N-A | `resolve_distances` runs with the transaction NOT yet open, on its own connection | VERIFIED | N1: every `DB_DISTANCE_LOOKUP` / `CITY_DISTANCE` event precedes the opening of connection #1 (the transaction). N2: exactly 2 connections; the first ran **only** `QUERY_GET_DISTANCE`, the transaction connection ran **none**. N3: no `city_distance` call and no `time.sleep` occurs after the transaction opens. The distance connection is dropped by `del querier` (155) before the transaction starts. |
+| N-B | Each distinct city is resolved exactly once, even across several pages | VERIFIED | N5 with 3 pages / 2 distinct cities (CUNEO on pages 1-2, TORINO on page 3), CUNEO already cached in the DB: DB lookups `['CUNEO','TORINO']`, API calls `['TORINO']`, sleeps `[1.5]` — one lookup per distinct city, one API call for the only unknown one, no per-page repetition. |
+| N-C | A page whose city was never resolved ends with `distance = None` and is still committed as a discard | VERIFIED | C[PATTERN_CITY]: the committed `delivery_discard` row carries `delivery_city=None, distance=None`; the document commits once, no rollback. |
+| N-D | `QUERY_CHECK_DISCARD` guard | VERIFIED | N8 (row already exists): the page produces **no** DISCARD warning and **no** `delivery_discard` INSERT — only the 2 unrelated similarity warnings — and the document still commits (`res=(2,1)`, `commits=1`); the `CHECK_DISCARD` query is actually issued. N9: the discard PDF is still produced for the skipped page. N10 (no existing row): unchanged behaviour, exactly 1 `delivery_discard` row + 3 warnings. This removes the "retried forever" failure mode flagged as WARNING 4 in the first report. |
+| N-E | `save_warning`'s `querier` is keyword-only | VERIFIED | N11: `save_warning(MessageGenre.WARNING, some_querier, genre=...)` raises `TypeError: save_warning() takes 1 positional argument but 2 were given`. All three `doc_scanner` call sites pass `querier=querier` (287, 305, 382). |
+| N-F (extra) | A failure inside `resolve_distances` (ORS unreachable / DB down) cannot half-write | VERIFIED | Extra check: the exception propagates to `run()`, the pypdfium2 handle is closed, only the distance connection was ever opened, and **no** write, commit or rollback is attempted — there is no transaction to leave behind. |
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 | -------- | -------- | ------ | ------- |
-| `src/wheeck/recording_docs.py` | `RecordingError`, None-safe DISCARD template, guarded gap/distance lookups, transactional `doc_scanner`, shared-Querier helpers, self-restoring `run()` | VERIFIED | 593 lines; all elements present and reachable (see truths). `class RecordingError(RuntimeError)` at 101. |
-| `src/wheeck/__init__.py` | Public re-export of `RecordingError` | VERIFIED | Line 3-4, parenthesised import, `wheeck.RecordingError is recording_docs.RecordingError` asserted by gate 1. |
-| `README.md` | Documented per-document transaction and automatic re-processing | VERIFIED | Lines 9-12 document the per-document transaction, the rollback with discard-PDF deletion and the re-processing. |
+| `src/wheeck/recording_docs.py` | Transactional `doc_scanner`, `RecordingError`, guards, pre-transaction distance resolution, self-restoring `run()` | VERIFIED | 663 lines; `city_distance` (103), `resolve_distances` (119), `doc_scanner` (159), guards at 350/372/409, `run()` fallback at 622-628. |
+| `src/wheeck/__init__.py` | Re-export of `RecordingError` | VERIFIED | Unmodified since the last commit; gate 1 asserts `wheeck.RecordingError is recording_docs.RecordingError`. |
+| `README.md` | Per-document transaction, re-processing, and the new pre-transaction resolution documented | VERIFIED | Lines 9-14 now also document the `.failed.pdf` dead end and that text + distances are resolved before the transaction opens. |
+| `src/wheeck/constants.py` | `QUERY_CHECK_DISCARD` | VERIFIED (see note) | Purely additive `SELECT COUNT(*)` at 68-74; no existing query touched. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 | ---- | -- | --- | ------ | ------- |
-| `doc_scanner` | `Querier.save_changes` | commit last in `try`, rollback in `except` | WIRED | 356 / 362; AST gate proves placement and uniqueness. |
-| `doc_scanner` | `check_duplicate` / `save_warning` | shared querier argument | WIRED | 227, 245, 282, 318 — all four call sites pass `querier`; helpers use the `own_querier` idiom (440-441, 513-514, 524). |
-| `doc_scanner except` | `DDTs/discarded/*.pdf` | `unlink(missing_ok=True)` restricted to this run | WIRED | 366-369 iterating `discarded_docs` filled at 336 only when `is_new_discard`. |
-| `run() except` | `DDTs/<name>.pdf` | `shutil.move` restoring the original name, then `continue` | WIRED | 557-560, confirmed behaviourally by the run simulation. |
-
-### Data-Flow Trace (Level 4)
-
-| Artifact | Data | Source | Real data flows | Status |
-| -------- | ---- | ------ | --------------- | ------ |
-| `doc_scanner` transaction | pending INSERTs of every page | shared `querier` cursor | Yes — all writes observed on one connection, discarded by `save_changes(False)` and persisted by `save_changes(True)` | FLOWING |
-| `discarded_docs` | list of `Path` | `discarded_doc_path()` + `is_new_discard` filter | Yes — non-empty in the discard simulations, drives the unlink loop | FLOWING |
-| `run()` restore | `PATH_WORKING_DIR / doc` | loop variable `doc` (original basename) | Yes — file physically renamed in the simulation | FLOWING |
+| `doc_scanner` | `Querier.save_changes` | commit last in `try`, rollback in `except` | WIRED | 420 / 426; gate 2 AST assertions pass. |
+| `doc_scanner` | `check_duplicate` / `save_warning` | shared querier (`querier=querier`) | WIRED | 342, 287, 305, 382; positional passing now rejected (N11). |
+| `doc_scanner` | `resolve_distances` | called before the `Querier` is constructed | WIRED | 187 vs 190; ordering proven by N1/N2/N3. |
+| `doc_scanner` | `QUERY_CHECK_DISCARD` | guard before the discard write block | WIRED | 372-379; N8/N10. |
+| `doc_scanner except` | `DDTs/discarded/*.pdf` | `unlink(missing_ok=True)` limited to this run | WIRED | 430-433; B4. |
+| `run() except` | `DDTs/<name>.pdf` → `.failed.pdf` | `shutil.move` + nested `OSError` fallback | WIRED | 622-628; D2, D9-D11. |
 
 ### Behavioural Spot-Checks
 
 | Behaviour | Command | Result | Status |
 | --------- | ------- | ------ | ------ |
-| Package compiles | `.venv/Scripts/python.exe -m py_compile src/wheeck/recording_docs.py src/wheeck/__init__.py` | no output | PASS |
-| Package imports without a DB connection | `python -c "import wheeck; print(wheeck.__version__)"` | `1.0.3` | PASS |
-| Plan gate 1 (Task 1) | full AST/inspect one-liner from the PLAN | `GATE1 ok` | PASS |
-| Plan gate 2 (Task 2) | full AST one-liner from the PLAN | `GATE2 ok` | PASS |
-| Plan gate 3 (Task 3) | full AST + README one-liner from the PLAN | `GATE3 ok` | PASS |
-| `doc_scanner` happy / failure / discard paths | in-process simulation with a fake `Querier` + fake `pypdfium2` (scratchpad, no DB, no project files) | 23/24 checks pass; the single FAIL is a faulty assertion in the harness itself (it asserted 1 row per page while the code correctly commits 9 rows over 3 pages — the printed detail `committed pages=[1,2,3] rows=9` confirms correct behaviour) | PASS |
-| `run()` failure path | in-process simulation with `PATH_WORKING_DIR` redirected to a scratch dir | 9/9 (D1-D9) | PASS |
-| `save_warning` standalone vs shared | fake `Querier` spot-check | standalone: autocommit connection, `77` / `-1`; shared: `RecordingError`, no new connection | PASS |
+| Compiles | `py_compile recording_docs.py __init__.py constants.py` | no output | PASS |
+| Imports with no DB connection | `python -c "import wheeck"` | `1.0.3` | PASS |
+| Plan gate 1 (Task 1) | PLAN one-liner, verbatim | `GATE1 ok` | PASS |
+| Plan gate 2 (Task 2) | PLAN one-liner, verbatim minus the obsolete `doc.close() in finally` assertion | `GATE2 ok` | PASS (see note) |
+| Plan gate 3 (Task 3) | PLAN one-liner, verbatim | `GATE3 ok` | PASS |
+| `doc_scanner` A/B/C/E/N scenarios | scratchpad simulation (fake `Querier`, fake `pypdfium2`, stubbed `city_distance`/`sleep`) | 42/42 | PASS |
+| `run()` normal + `.failed.pdf` fallback | scratchpad simulation with `PATH_WORKING_DIR` redirected | 13/13 | PASS |
+| `resolve_distances` failure | scratchpad extra check | no transaction opened, no write | PASS |
+| Anti-pattern scan | `grep TODO\|FIXME\|XXX\|HACK\|TBD\|PLACEHOLDER` on the 4 changed files | no match | PASS |
+
+**Note on plan gate 2.** One assertion of the PLAN's gate, `assert 'doc.close()' in fin` (the *transaction*
+`finally`), no longer holds: the transaction `finally` is now `['del querier']` and `doc.close()` moved to the
+extraction `try/finally` (`pages_text = [...]` / `finally: doc.close()`), which runs before the transaction
+exists. This is an obsolete assertion, not a regression — the intent it encoded ("the handle is released on
+every exit path before the rename") is satisfied more strongly than before, as N4 and N7 show. Every other
+assertion of that gate still passes verbatim.
 
 ### Out-of-Scope Files
 
 | File | Status | Evidence |
 | ---- | ------ | -------- |
-| `src/wheeck/constants.py` | UNMODIFIED | `git diff HEAD~3 HEAD -- src/wheeck/constants.py` empty |
-| `src/main.py` | UNMODIFIED | empty diff |
-| `src/wheeck/overview_docs.py` | UNMODIFIED | empty diff |
-| `scheme/wheeck.sql` | UNMODIFIED | empty diff |
-| `src/core` (symlink to `C:/source/core/src/core`) | UNMODIFIED | empty diff; `git diff --stat HEAD~3 HEAD` lists only `README.md`, `src/wheeck/__init__.py`, `src/wheeck/recording_docs.py` |
-
-(`config/wheeck.json` shows as modified in the working tree but was already dirty before this task and is untouched by the three commits.)
+| `src/main.py`, `scheme/wheeck.sql`, `src/wheeck/overview_docs.py`, `src/core`, `src/wheeck/__init__.py` | UNMODIFIED | `git diff --stat` against those paths is empty (committed and working tree). |
+| `src/wheeck/constants.py` | MODIFIED — additive only | The PLAN constraint said this file "MUST NOT change". The change is a new `QUERY_CHECK_DISCARD` `SELECT COUNT(*)`; no existing query, table or column is touched, and it is a read. Recorded as an authorised deviation from the plan constraint, not as a defect — flagging it because the constraint asked for it to be surfaced rather than done silently. |
+| `config/wheeck.json` | MODIFIED — pre-existing dirt | Already dirty before this task started; not part of the recording-transaction change. Not reviewed. |
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 | ---- | ---- | ------- | -------- | ------ |
-| — | — | no `TODO`/`FIXME`/`XXX`/`HACK`/`TBD`/`PLACEHOLDER` in the three modified files | — | none |
+| — | — | none | — | none |
 
-### Warnings (non-blocking, outside the declared truths)
+### Warnings (non-blocking)
 
-1. **The pre-loop region is outside the transactional guard.** `pypdfium2.PdfDocument(working_doc)` and
-   `len(doc)` (127-129) execute before `try:` (143). This is DB-safe — no statement has run, so nothing can be
-   half-committed, and `run()` still restores the filename — but if `len(doc)` raised, `doc` would never be
-   closed and the `shutil.move` in `run()` could fail with WinError 32 (caught, logged `critical`, file left as
-   `<name>.recording.pdf` and thereafter skipped by `PATTERN_WORKING_DOC`). Cheap hardening: move
-   `doc = pypdfium2.PdfDocument(...)` / `doc_pages = len(doc)` inside the `try`.
-2. **Post-commit archiving in `run()` is unguarded.** `shutil.copy` to `backup_dir` and `shutil.move` to
-   `PATH_RECORDED_DIR` (564-569) sit outside the `try`. An `OSError` there happens *after* the commit, so it
+1. **Post-commit archiving in `run()` is still unguarded.** `shutil.copy` to `backup_dir` and `shutil.move` to
+   `PATH_RECORDED_DIR` (634-639) sit outside the `try`. An `OSError` there occurs *after* the commit, so it
    cannot corrupt the database, but it aborts the whole batch and leaves a committed document as
-   `<name>.recording.pdf`, which `PATTERN_WORKING_DOC` will never pick up again. Pre-existing behaviour, not a
-   regression of this task, and correctly out of the CONTEXT boundary — recorded as a follow-up.
-3. **Long-lived transaction.** With auto-commit off, the read queries (`QUERY_GET_DISTANCE`,
-   `QUERY_GET_GAP`, `QUERY_CHECK_DUPLICATE`) now also run inside the document transaction, which stays open for
-   the whole PDF — including the 1.5 s OpenRouteService sleeps. Correct by design, but a large document holds
-   its transaction (and its locks) for minutes. Worth knowing, not a defect.
-4. **A re-processed document that already has committed `delivery_discard` rows will hit
-   `uq_delivery_discard_document_source_page` and roll back on every run.** This only occurs if a document is
-   manually re-queued after a successful run; the amended CONTEXT already accepts "a deterministic failure is
-   retried and logged on every run".
+   `<name>.recording.pdf`, invisible to `PATTERN_WORKING_DOC`. Carried over from the first report; still the
+   only unguarded filesystem step. Cheap fix: reuse the same `.failed.pdf` idiom there.
+2. **`resolve_distances` widens the "before the transaction" window rather than removing failure.** A network
+   failure there aborts the document (verified: cleanly, with no transaction ever opened) and `run()`
+   requeues it, so an ORS outage means every document is retried on every run until the outage ends. This is
+   the intended trade-off, but it now happens *before* any useful work, so it is cheap.
+3. **The distance cache is read once per document.** If two cities of the same document map to the same
+   normalised name the set collapses them correctly, but a city resolved during document N is not reused for
+   document N+1 in the same batch — each `doc_scanner` call rebuilds its own `distances` dict from the DB.
+   Correct, just not maximally cached.
+4. **The `is_discarded` guard costs one extra `SELECT COUNT(*)` per discarded page** inside the transaction.
+   Negligible, and it buys immunity from the UNIQUE-violation rollback loop.
 
 ### Gaps Summary
 
-No gaps. All eight must-have truths hold in the actual code, and the behaviours the user asked for are
-observable: a runtime error anywhere in the page loop rolls the whole document back (zero rows in
-`delivery`, `delivery_discard` and `delivery_warning`, including the early similarity `delivery_warning`
-rows that previously escaped on their own auto-commit connection), a clean document commits exactly once
-after the loop, earlier documents of the batch keep their commits, and a `PATTERN_*` discard stays a
-discard instead of becoming a rollback. The SUMMARY's claims were checked against the code and the three
-plan gates were re-run by the verifier — they hold, including the "no deviations" claim (the `-w` diff of
-`doc_scanner` contains only the planned hunks; the extraction pipeline is byte-identical apart from
-indentation).
+No gaps, and no regressions from the restructure. The user's goal is observable in the current code and was
+exercised end-to-end with stubs: a runtime error anywhere in the page loop rolls the whole document back
+(zero rows in `delivery`, `delivery_discard` and `delivery_warning`, including the early similarity warning
+rows), a clean document commits exactly once after the loop, documents committed earlier in the batch keep
+their commits, and a `PATTERN_*` discard remains a discard. The three changes that carried the most risk —
+moving the network calls out of the transaction, the pre-existing-discard guard, and the keyword-only
+`querier` — were each verified individually (N-A…N-E) and none of them broke the eight original truths;
+two of them actively closed warnings raised in the first pass.
 
-Status is `human_needed` rather than `passed` only because two effects cannot be observed without a live
-run: the real Postgres rollback (the verifier is read-only and the repo has no test suite) and the Windows
-file-handle release before the rename. Both were proven at the logic level with in-process fakes.
+Status stays `human_needed`: the real Postgres rollback, the Windows handle release, and the live timing of
+the pre-transaction distance resolution can only be observed on a real run against the database. Everything
+verifiable without a database has been verified by execution, not by reading the SUMMARY.
 
 ---
 
-_Verified: 2026-08-09T17:21:44Z_
+_Verified: 2026-08-09T17:21:44Z — re-verified 2026-08-09T18:05:00Z_
 _Verifier: Claude (gsd-verifier)_
