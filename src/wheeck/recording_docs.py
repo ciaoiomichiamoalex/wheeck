@@ -87,9 +87,22 @@ class MessageGenre(Enum):
     """
     The MessageGenre enum contains the warning message types with their text pattern.
     """
-    DISCARD = 'Page %(page)d of doc %(doc)s discarded for error on %(pattern)s [number: %(document_number)d, genre: %(document_genre)s, date: %(document_date)s]'
+    # DISCARD needs '%(document_number)s' and not '%(document_number)d': on a PATTERN_DOC_NUMBER failure the
+    # document number stays None and a '%d' specifier raises TypeError before any INSERT runs, turning the
+    # regular discard path into a rollback trigger (es. 'number: None'). The view wheeck.vw_discard_message
+    # already parses that string form back with NULLIF(..., 'None'). The other specifiers are safe as they
+    # are: '%(page)d' is always the working_page int, while '%(doc)s', '%(pattern)s', '%(document_genre)s'
+    # and '%(document_date)s' render None harmlessly. GAP is fed by vw_delivery_gap rows, never None.
+    DISCARD = 'Page %(page)d of doc %(doc)s discarded for error on %(pattern)s [number: %(document_number)s, genre: %(document_genre)s, date: %(document_date)s]'
     GAP = 'Found gap for doc number %(document_number)d of year %(document_year)d'
     WARNING = 'Had similarity crash for %(genre)s %(record)s on page %(page)d of doc %(doc)s'
+
+
+class RecordingError(RuntimeError):
+    """
+    Raised when a database write does not affect exactly one row, in order to abort and roll back the whole
+    document currently being recorded.
+    """
 
 
 def doc_scanner(working_doc: str | Path,
@@ -355,16 +368,22 @@ def discard_doc(working_doc: str | Path,
     return discarded_doc
 
 
-def check_duplicate(delivery: Delivery) -> bool:
+def check_duplicate(delivery: Delivery,
+                    querier: Querier = None) -> bool:
     """
     Check the existence of a delivery to avoid duplicates.
 
     :param delivery: The delivery object to check existence.
     :type delivery: Delivery
+    :param querier: The shared document transaction querier, None to open a private one.
+    :type querier: Querier
     :return: The existence or not.
     :rtype: bool
     """
-    querier: Querier = Querier(cfg_in=PATH_CFG)
+    # own_querier: True when no shared transaction querier is given, so the connection is opened and closed here
+    own_querier = querier is None
+    if own_querier: querier = Querier(cfg_in=PATH_CFG)
+
     is_duplicate = bool(querier.run(QUERY_CHECK_DUPLICATE,
         delivery.document_source,
         delivery.page_number,
@@ -373,7 +392,7 @@ def check_duplicate(delivery: Delivery) -> bool:
         delivery.document_date.year
     ).fetch(Querier.FETCH_VAL))
 
-    del querier
+    if own_querier: del querier
     return is_duplicate
 
 
@@ -421,24 +440,32 @@ def check_similarity(source_record: str,
 
 
 def save_warning(message_genre: MessageGenre,
+                 querier: Querier = None,
                  **kwargs) -> int:
     """
     Save a delivery warning message into the database and return the message ID.
 
     :param message_genre: The enum attribute that identifies the message genre.
     :type message_genre: MessageGenre
+    :param querier: The shared document transaction querier, None to open a private auto-commit one.
+    :type querier: Querier
     :param kwargs: The named fields in the message text.
-    :return: The ID of the message record on the database or -1 in case of error.
+    :return: The ID of the message record on the database or -1 in case of error, only without a shared querier.
     :rtype: int
     """
-    querier: Querier = Querier(cfg_in=PATH_CFG, save_changes=True)
+    # own_querier: True when no shared transaction querier is given, so the connection is opened and closed here
+    own_querier = querier is None
+    if own_querier: querier = Querier(cfg_in=PATH_CFG, save_changes=True)
 
     if querier.run(QUERY_INSERT_WARNING, message_genre.name, message_genre.value % kwargs).rows != 1:
         logger.critical('error on saving delivery warning message record... check the database connection!')
+        # inside a document transaction the failure must roll back the whole document, the -1 sentinel is
+        # kept only for the standalone callers which write on their own auto-commit connection
+        if not own_querier: raise RecordingError('INSERT_WARNING')
         id_message = -1
     else: id_message = querier.fetch(Querier.FETCH_VAL)
 
-    del querier
+    if own_querier: del querier
     return id_message
 
 
