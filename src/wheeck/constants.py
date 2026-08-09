@@ -65,6 +65,14 @@ QUERY_CHECK_DUPLICATE = """\
     ;
 """
 
+QUERY_CHECK_DISCARD = """\
+    SELECT COUNT(*) AS nr_record
+    FROM wheeck.delivery_discard
+    WHERE document_source = ?
+        AND page_number = ?
+    ;
+"""
+
 QUERY_GET_DISTANCE = """\
     SELECT DISTINCT distance
     FROM wheeck.delivery

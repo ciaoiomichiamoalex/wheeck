@@ -18,8 +18,9 @@ from geo import GeoMap
 from .constants import (CMD_BACKUP_DB, PATH_CFG, PATH_CFG_PRJ, PATH_DISCARDED_DIR, PATH_LOG, PATH_RECORDED_DIR,
                         PATH_SCHEME, PATH_WORKING_DIR, PATTERN_CITY_DX, PATTERN_CITY_SX, PATTERN_DISCARD_DOC,
                         PATTERN_DOC_NUMBER, PATTERN_QUANTITY, PATTERN_VEHICLE, PATTERN_WORKING_DOC,
-                        QUERY_CHECK_DUPLICATE, QUERY_CHECK_GAPS, QUERY_GET_DISCARD, QUERY_GET_DISTANCE, QUERY_GET_GAP,
-                        QUERY_INSERT_DELIVERY, QUERY_INSERT_DISCARD, QUERY_INSERT_WARNING, QUERY_UPDATE_WARNING)
+                        QUERY_CHECK_DISCARD, QUERY_CHECK_DUPLICATE, QUERY_CHECK_GAPS, QUERY_GET_DISCARD,
+                        QUERY_GET_DISTANCE, QUERY_GET_GAP, QUERY_INSERT_DELIVERY, QUERY_INSERT_DISCARD,
+                        QUERY_INSERT_WARNING, QUERY_UPDATE_WARNING)
 from .overview_docs import generate_current
 
 logger = get_logger(PATH_LOG, __name__)
@@ -63,13 +64,7 @@ class Delivery:
         """
         Calculates distance between the attribute delivery city and the starting position in wheeck.json.
         """
-        if self.delivery_city:
-            departure = tuple(decode_json(PATH_CFG_PRJ)['departure_coords'])
-            geo: GeoMap = GeoMap(PATH_CFG_PRJ)
-            destination = geo.search(self.delivery_city)
-            # calculate distance from delivery_city with GeoMap class
-            self.distance = (geo.get_distance_from_coords(departure, destination)
-                             if destination else None)
+        if self.delivery_city: self.distance = city_distance(self.delivery_city)
 
     def charge(self,
                attributes: dict) -> None:
@@ -105,6 +100,62 @@ class RecordingError(RuntimeError):
     """
 
 
+def city_distance(delivery_city: str) -> float | None:
+    """
+    Calculate the driving distance between the departure position in wheeck.json and a delivery city.
+
+    :param delivery_city: The destination city (es. 'CUNEO').
+    :type delivery_city: str
+    :return: The distance or None when the city cannot be geocoded.
+    :rtype: float | None
+    """
+    departure = tuple(decode_json(PATH_CFG_PRJ)['departure_coords'])
+    geo: GeoMap = GeoMap(PATH_CFG_PRJ)
+    destination = geo.search(delivery_city)
+    # calculate distance from delivery_city with GeoMap class
+    return geo.get_distance_from_coords(departure, destination) if destination else None
+
+
+def resolve_distances(pages_text: list[str]) -> dict[str, float | None]:
+    """
+    Resolve the distance of every distinct delivery city found in the pages of a document.
+
+    Runs BEFORE the document transaction opens: each new city costs two OpenRouteService calls plus a 1.5s
+    throttle, and holding the transaction open for that long exposes it to the server side
+    idle_in_transaction_session_timeout, which would kill the session mid-document on every run.
+    Resolving per distinct city instead of per page also spares the repeated calls of a multi page document.
+
+    :param pages_text: The text layer of every page of the document.
+    :type pages_text: list[str]
+    :return: The distance of each city, None when it cannot be geocoded (es. {'CUNEO': 12.3, 'ROMA': None}).
+    :rtype: dict[str, float | None]
+    """
+    # cities: distinct delivery cities found on the pages (es. {'CUNEO', 'TORINO'})
+    cities = set()
+    for text in pages_text:
+        # same right side then left side fallback used by doc_scanner to extract the delivery city
+        search = re.search(PATTERN_CITY_DX, text) or re.search(PATTERN_CITY_SX, text)
+        if search: cities.add(search.group(2).upper().strip())
+
+    distances: dict[str, float | None] = {}
+    if not cities: return distances
+
+    querier: Querier = Querier(cfg_in=PATH_CFG)
+    for city in cities:
+        # check if distance for this city is already calculated on database
+        logger.info('checking if the distance for %s has already been calculated...', city)
+        if querier.run(QUERY_GET_DISTANCE, city).rows == 1:
+            distances[city] = querier.fetch(Querier.FETCH_VAL)
+        else:
+            logger.info('calculating distance from %s...', city)
+            distances[city] = city_distance(city)
+            # waiting before next open route service API call (40 call/min)
+            time.sleep(1.5)
+
+    del querier
+    return distances
+
+
 def doc_scanner(working_doc: str | Path,
                 job_begin: datetime = datetime.now()) -> tuple[int, int]:
     """
@@ -117,16 +168,26 @@ def doc_scanner(working_doc: str | Path,
     :return: The number of worked pages and discarded pages.
     :rtype: tuple[int, int]
     """
-    # save_changes=False keeps auto-commit OFF: an implicit transaction opens on the first executed statement
-    querier: Querier = Querier(cfg_in=PATH_CFG)
     # working_doc: path to document with suffix '.recording' (es. c:/source/wheeck/DDTs/2024_01_DDT_0001_0100.recording.pdf)
     # working_doc_name: basename of working_doc without suffix
     working_doc_name = working_doc.stem.removesuffix('.recording') + working_doc.suffix
 
+    # the text layer is extracted once, up front, so the pypdfium2 handle on working_doc is released before
+    # the transaction opens: nothing must keep it open on the rollback path, or the rename done by run() to
+    # requeue the document would fail with a sharing violation on Windows
     # doc: raw PDF doc
     doc = pypdfium2.PdfDocument(working_doc)
+    # pages_text: text layer of every page of working_doc
+    try: pages_text = [page.get_textpage().get_text_bounded() for page in doc]
+    finally: doc.close()
     # doc_pages: total number of pages in working_doc
-    doc_pages = len(doc)
+    doc_pages = len(pages_text)
+
+    # distances: distance of every city of the document, resolved outside the transaction [see resolve_distances]
+    distances = resolve_distances(pages_text)
+
+    # save_changes=False keeps auto-commit OFF: an implicit transaction opens on the first executed statement
+    querier: Querier = Querier(cfg_in=PATH_CFG)
     # discarded_docs: PDFs written under DDTs/discarded by THIS run, to be removed on rollback (es. [c:/source/wheeck/DDTs/discarded/2024_01_DDT_0001_0100_P001.pdf])
     discarded_docs: list[Path] = []
     # discarded_pages: all information on pages with errors [anonymous class]
@@ -142,10 +203,9 @@ def doc_scanner(working_doc: str | Path,
 
     try:
         # working_page: current number page
-        # page: raw PDF page
-        for working_page, page in enumerate(doc, start=1):
+        # text: text layer of the current page
+        for working_page, text in enumerate(pages_text, start=1):
             logger.info('scanning on page %d of %s...', working_page, working_doc_name)
-            text = page.get_textpage().get_text_bounded()
 
             # delivery: information obtained from the page
             delivery: Delivery = Delivery(working_doc_name, working_page, job_begin)
@@ -224,7 +284,7 @@ def doc_scanner(working_doc: str | Path,
                 if delivery.vehicle not in vehicles_enum:
                     logger.warning('saving delivery warning for similarity crash on vehicle %s for page %d of %s...',
                                    delivery.vehicle, working_page, working_doc_name)
-                    save_warning(MessageGenre.WARNING, querier,
+                    save_warning(MessageGenre.WARNING, querier=querier,
                                  genre='vehicle',
                                  record=delivery.vehicle,
                                  page=delivery.page_number,
@@ -242,7 +302,7 @@ def doc_scanner(working_doc: str | Path,
                 if delivery.vehicle_driver not in drivers_enum:
                     logger.warning('saving delivery warning for similarity crash on driver %s for page %d of %s...',
                                    delivery.vehicle_driver, working_page, working_doc_name)
-                    save_warning(MessageGenre.WARNING, querier,
+                    save_warning(MessageGenre.WARNING, querier=querier,
                                  genre='driver',
                                  record=delivery.vehicle_driver,
                                  page=delivery.page_number,
@@ -285,19 +345,13 @@ def doc_scanner(working_doc: str | Path,
                 # don't save discard record on database in case of duplication
                 delivery.id_warning_message = -1
             # the delivery_city guard mirrors the one Delivery.calculate_distance() already applies to itself:
-            # on a PATTERN_CITY failure the city is None and QUERY_GET_DISTANCE would run with no bound
-            # parameter, raising a pyodbc error which must never turn a regular discard into a rollback
+            # on a PATTERN_CITY failure the city is None and resolve_distances never mapped it, so the page
+            # keeps a NULL distance and stays a plain discard instead of becoming a rollback trigger
             elif delivery.delivery_city and not delivery.distance:
-                # check if distance for this city is already calculated on database
-                logger.info('checking if the distance for %s has already been calculated...', delivery.delivery_city)
-                if querier.run(QUERY_GET_DISTANCE, delivery.delivery_city).rows == 1:
-                    delivery.distance = querier.fetch(Querier.FETCH_VAL)
-                else:
-                    logger.info('calculating distance from %s for page %d of %s...',
-                                delivery.delivery_city, working_page, working_doc_name)
-                    delivery.calculate_distance()
-                    # waiting before next open route service API call (40 call/min)
-                    time.sleep(1.5)
+                # already resolved before the transaction opened, no database read nor API call happens here
+                delivery.distance = distances.get(delivery.delivery_city)
+                logger.info('distance of %s for page %d of %s... [%s]',
+                            delivery.delivery_city, working_page, working_doc_name, delivery.distance)
 
             # save delivery record
             if not discarded_pages.on_error:
@@ -312,10 +366,20 @@ def doc_scanner(working_doc: str | Path,
 
             # check if there is errors on page
             if discarded_pages.on_error:
-                if not delivery.id_warning_message:
+                # delivery_discard has UNIQUE (document_source, page_number): a page already discarded by a
+                # previous run must not be inserted again, or the IntegrityError would roll back a document
+                # that was in fact handled correctly, and the requeue done by run() would retry it forever
+                is_discarded = (not delivery.id_warning_message
+                                and querier.run(QUERY_CHECK_DISCARD,
+                                                delivery.document_source,
+                                                delivery.page_number).fetch(Querier.FETCH_VAL))
+                if is_discarded:
+                    logger.warning('discard record of page %d of %s already exists... skipping it!',
+                                   working_page, working_doc_name)
+                elif not delivery.id_warning_message:
                     logger.info('saving discard record and warning message for page %d of %s for errors on %s...',
                                 working_page, working_doc_name, discarded_pages.on_error)
-                    delivery.id_warning_message = save_warning(MessageGenre.DISCARD, querier,
+                    delivery.id_warning_message = save_warning(MessageGenre.DISCARD, querier=querier,
                                                                page=delivery.page_number,
                                                                doc=delivery.document_source,
                                                                pattern=discarded_pages.on_error,
@@ -360,7 +424,7 @@ def doc_scanner(working_doc: str | Path,
         logger.critical('rolling back the whole doc %s... nothing will be saved!', working_doc_name)
         # the rollback has its own handler so a dead connection cannot replace the original exception
         try: querier.save_changes(False)
-        except Exception: logger.critical('error on rollback of %s... check the database connection!', working_doc_name)
+        except Exception: logger.exception('error on rollback of %s... check the database connection!', working_doc_name)
 
         # the filesystem is not transactional: remove the discard PDFs written by this run
         for discarded in discarded_docs:
@@ -370,7 +434,6 @@ def doc_scanner(working_doc: str | Path,
         # re-raising is load-bearing: without it run() would treat the document as recorded and archive it
         raise
     finally:
-        doc.close()
         # del only drops this reference: on the re-raise path the traceback still holds the querier in the
         # check_duplicate / save_warning frames, so Querier.__del__ closes the connection once run() releases
         # the exception. The ROLLBACK above is already done, so this is data-safe [core.Querier has no close()]
@@ -496,6 +559,7 @@ def check_similarity(source_record: str,
 
 
 def save_warning(message_genre: MessageGenre,
+                 *,
                  querier: Querier = None,
                  **kwargs) -> int:
     """
@@ -504,6 +568,7 @@ def save_warning(message_genre: MessageGenre,
     :param message_genre: The enum attribute that identifies the message genre.
     :type message_genre: MessageGenre
     :param querier: The shared document transaction querier, None to open a private auto-commit one.
+        Keyword only, so that adding it cannot shadow a positional argument of the previous signature.
     :type querier: Querier
     :param kwargs: The named fields in the message text.
     :return: The ID of the message record on the database or -1 in case of error, only without a shared querier.
@@ -555,7 +620,12 @@ def run() -> None:
             # reprocesses it from scratch against an empty database state, leaving it as '.recording.pdf'
             # would make run() skip it forever [the pypdfium2 handle is already released by doc_scanner]
             try: shutil.move(working_doc, PATH_WORKING_DIR / doc)
-            except OSError as error: logger.critical('error on restoring doc %s for reprocessing! [%s]', doc, error)
+            except OSError as error:
+                logger.critical('error on restoring doc %s for reprocessing! [%s]', doc, error)
+                # last resort: '.failed.pdf' is an explicit, greppable dead end, while leaving the doc as
+                # '.recording.pdf' would look like a run still in progress and hide it behind a warning
+                try: shutil.move(working_doc, PATH_WORKING_DIR / f"{doc.split('.')[0]}.failed.pdf")
+                except OSError as fallback: logger.critical('error on marking doc %s as failed! [%s]', doc, fallback)
             # skipping both the backup copy and the move in the recorded dir, the previous docs stay recorded
             continue
 
