@@ -7,7 +7,9 @@ PATH_LOG = PATH_PRJ / 'log'
 PATH_RES = PATH_PRJ / 'res'
 PATH_SCHEME = PATH_PRJ / 'scheme'
 
-PATH_CFG_PRJ = PATH_CFG / 'wheeck.json'
+# real configurations are the gitignored *.local.json copies of the committed templates
+PATH_CFG_PRJ = PATH_CFG / 'wheeck.local.json'
+PATH_CFG_DB = PATH_CFG / 'querier.local.json'
 
 PATH_WORKING_DIR = PATH_PRJ / 'DDTs'
 PATH_DISCARDED_DIR = PATH_WORKING_DIR / 'discarded'

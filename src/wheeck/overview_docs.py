@@ -6,7 +6,7 @@ import openpyxl
 from openpyxl.styles import Alignment, Font
 
 from core import Querier, decode_json, get_logger
-from .constants import (OVERVIEW_DEFAULT_FONT, OVERVIEW_FORMATS, PATH_CFG, PATH_CFG_PRJ, PATH_LOG, PATH_RES,
+from .constants import (OVERVIEW_DEFAULT_FONT, OVERVIEW_FORMATS, PATH_CFG_DB, PATH_CFG_PRJ, PATH_LOG, PATH_RES,
                         PATH_SCHEME, QUERY_GET_LAST_OVERVIEWS, QUERY_GET_OVERVIEW, QUERY_GET_SUMMARY)
 
 logger = get_logger(PATH_LOG, __name__)
@@ -22,7 +22,7 @@ def generate_overview(year: int = date.today().year,
     :param month: The desired month for the overview.
     :type month: int
     """
-    querier: Querier = Querier(cfg_in=PATH_CFG)
+    querier: Querier = Querier(cfg_in=PATH_CFG_DB)
     # overview_name: path to the result overview (es. c:/source/wheeck/res/2024_01.xlsx)
     overview_name = PATH_RES / f'{year}_{month:0>2}.xlsx'
     # scheme_name: path to the overview template (es. c:/source/wheeck/scheme/overview.xlsx)
@@ -66,7 +66,7 @@ def generate_summary(year: int = date.today().year) -> None:
     :param year: The desired year for the summary.
     :type year: int
     """
-    querier: Querier = Querier(cfg_in=PATH_CFG)
+    querier: Querier = Querier(cfg_in=PATH_CFG_DB)
     # summary_name: path to the result overview (es. c:/source/wheeck/res/2024_TRIPS.xlsx)
     summary_name = PATH_RES / f'{year}_TRIPS.xlsx'
     # scheme_name: path to the overview template (es. c:/source/wheeck/scheme/summary.xlsx)
@@ -99,7 +99,7 @@ def generate_current() -> None:
     """
     Generate or update the overviews and summaries of deliveries recorded today.
     """
-    querier: Querier = Querier(cfg_in=PATH_CFG)
+    querier: Querier = Querier(cfg_in=PATH_CFG_DB)
     if querier.run(QUERY_GET_LAST_OVERVIEWS).rows:
         res = querier.fetch(Querier.FETCH_ALL)
 

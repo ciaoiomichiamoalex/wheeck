@@ -15,7 +15,7 @@ import pypdfium2
 
 from core import Querier, decode_json, get_logger
 from geo import GeoMap
-from .constants import (CMD_BACKUP_DB, PATH_CFG, PATH_CFG_PRJ, PATH_DISCARDED_DIR, PATH_LOG, PATH_RECORDED_DIR,
+from .constants import (CMD_BACKUP_DB, PATH_CFG_DB, PATH_CFG_PRJ, PATH_DISCARDED_DIR, PATH_LOG, PATH_RECORDED_DIR,
                         PATH_SCHEME, PATH_WORKING_DIR, PATTERN_CITY_DX, PATTERN_CITY_SX, PATTERN_DISCARD_DOC,
                         PATTERN_DOC_NUMBER, PATTERN_QUANTITY, PATTERN_VEHICLE, PATTERN_WORKING_DOC,
                         QUERY_CHECK_DISCARD, QUERY_CHECK_DUPLICATE, QUERY_CHECK_GAPS, QUERY_GET_DISCARD,
@@ -140,7 +140,7 @@ def resolve_distances(pages_text: list[str]) -> dict[str, float | None]:
     distances: dict[str, float | None] = {}
     if not cities: return distances
 
-    querier: Querier = Querier(cfg_in=PATH_CFG)
+    querier: Querier = Querier(cfg_in=PATH_CFG_DB)
     for city in cities:
         # check if distance for this city is already calculated on database
         logger.info('checking if the distance for %s has already been calculated...', city)
@@ -187,7 +187,7 @@ def doc_scanner(working_doc: str | Path,
     distances = resolve_distances(pages_text)
 
     # save_changes=False keeps auto-commit OFF: an implicit transaction opens on the first executed statement
-    querier: Querier = Querier(cfg_in=PATH_CFG)
+    querier: Querier = Querier(cfg_in=PATH_CFG_DB)
     # discarded_docs: PDFs written under DDTs/discarded by THIS run, to be removed on rollback (es. [c:/source/wheeck/DDTs/discarded/2024_01_DDT_0001_0100_P001.pdf])
     discarded_docs: list[Path] = []
     # discarded_pages: all information on pages with errors [anonymous class]
@@ -501,7 +501,7 @@ def check_duplicate(delivery: Delivery,
     """
     # own_querier: True when no shared transaction querier is given, so the connection is opened and closed here
     own_querier = querier is None
-    if own_querier: querier = Querier(cfg_in=PATH_CFG)
+    if own_querier: querier = Querier(cfg_in=PATH_CFG_DB)
 
     is_duplicate = bool(querier.run(QUERY_CHECK_DUPLICATE,
         delivery.document_source,
@@ -522,7 +522,7 @@ def check_gaps() -> int:
     :return: The number of gaps found.
     :rtype: int
     """
-    querier: Querier = Querier(cfg_in=PATH_CFG)
+    querier: Querier = Querier(cfg_in=PATH_CFG_DB)
     gaps_num = querier.run(QUERY_CHECK_GAPS).rows
 
     for row in querier:
@@ -576,7 +576,7 @@ def save_warning(message_genre: MessageGenre,
     """
     # own_querier: True when no shared transaction querier is given, so the connection is opened and closed here
     own_querier = querier is None
-    if own_querier: querier = Querier(cfg_in=PATH_CFG, save_changes=True)
+    if own_querier: querier = Querier(cfg_in=PATH_CFG_DB, save_changes=True)
 
     if querier.run(QUERY_INSERT_WARNING, message_genre.name, message_genre.value % kwargs).rows != 1:
         logger.critical('error on saving delivery warning message record... check the database connection!')

@@ -12,3 +12,6 @@ Python package which extracts delivery information from the text of PDF DDTs usi
   on the next run (or renames it to `.failed.pdf` if even the restore fails). The text of every page is
   extracted and the distance of every delivery city is resolved *before* the transaction opens, so the
   OpenRouteService calls and their throttle never hold it open
+
+Configuration: `config/wheeck.json` and `config/querier.json` are committed templates; copy each one to its
+gitignored `*.local.json` sibling (`config/wheeck.local.json`, `config/querier.local.json`) and fill in the real values.

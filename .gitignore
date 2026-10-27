@@ -8,3 +8,5 @@ __pycache__/
 
 *.dump
 *.xlsx
+
+/config/*.local.json

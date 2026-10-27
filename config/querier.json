@@ -6,6 +6,6 @@
     "port": 5432,
     "database": "postgres",
     "user": "wheeck",
-    "password": "Wheeck!2024"
+    "password": null
   }
 ]
