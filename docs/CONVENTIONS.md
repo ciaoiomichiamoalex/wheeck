@@ -10,7 +10,7 @@ Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src
 **Files:**
 - Modules use `snake_case.py` and are named after their job: `src/wheeck/recording_docs.py` (records documents), `src/wheeck/overview_docs.py` (writes Excel overviews), `src/core/querier.py` (wraps the database), `src/geo/geo.py` (wraps OpenRouteService).
 - Packages use one lowercase word: `core`, `geo`, `wheeck`.
-- All constants, paths, regex patterns and SQL strings live in `src/wheeck/constants.py`.
+- Every module-level `PATH_*`, `PATTERN_*`, `QUERY_*`, `CMD_*` and `OVERVIEW_*` constant, every regex and every SQL string live in `src/wheeck/constants.py`. Class constants (`Querier.FETCH_*`, `_EXCEL_FORMATS`) and the `MessageGenre` templates stay in their class, and some file names are built inline, such as `'overview.xlsx'`, `'summary.xlsx'`, `'wheeck.dump'` and `'querier.json'`.
 - SQL scripts use one file per database object, named after the object: `db/tables/delivery_discard.sql`, `db/views/vw_gap_message.sql`, `db/triggers/trg_sync_discard_status.sql`, `db/functions/sync_discard_status.sql`.
 
 **Functions:**
@@ -24,7 +24,7 @@ Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src
 **Variables:**
 - Use `snake_case` with domain words: `working_doc`, `working_doc_name`, `working_page`, `discarded_docs`, `job_begin`.
 - Name input paths with an `_in` suffix: `cfg_in`, `json_in`, `conn_in`. Name output files `fou` ("file out"), as in `get_logger(fou, ...)` and `Querier.save_excel(fou, ...)`.
-- Start booleans with `is_`: `is_duplicate`, `is_discard`, `is_discarded`, `is_new_discard`. The one exception is the `own_querier` flag (see Function Design).
+- Start boolean locals with `is_`: `is_duplicate`, `is_discard`, `is_discarded`, `is_new_discard`. The one exception in `src/wheeck/` is the `own_querier` flag (see Function Design). Boolean parameters in `src/core/` have no prefix: `single`, `console`, `save`, `save_changes`.
 - For openpyxl objects, use `wb` for the workbook and `ws` for the worksheet (`src/wheeck/overview_docs.py`, `src/core/querier.py`).
 - Use the word **genre** for "kind/type" everywhere: `document_genre`, `message_genre`, `MessageGenre`, `Querier.fetch(genre=...)`. Do not add `type`/`kind` synonyms, because the database columns use `genre`.
 
@@ -71,7 +71,7 @@ Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src
   working_doc = PATH_WORKING_DIR / f"{doc.split('.')[0]}.recording.pdf"
   PATTERN_CITY_DX = r"Luogo di consegna\r\n([\w\t \.\&\-'\/\(\)]+)\r\n..."
   ```
-- **Write short compound statements on one line.** The codebase has 40 of them. Use this form when the body is one short statement:
+- **Write short compound statements on one line.** The codebase has 39 of them. Use this form when the body is one short statement:
   ```python
   if isinstance(res, dict): res = [res]
   try: pages_text = [page.get_textpage().get_text_bounded() for page in doc]
@@ -93,7 +93,7 @@ Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src
       ;
   """
   ```
-- `.sql` files in `db/` follow the same style: UPPERCASE keywords, 4-space indent, and `;` on its own line after each statement.
+- `.sql` files in `db/` use UPPERCASE keywords and a 4-space indent. `CREATE TABLE/VIEW/INDEX/TRIGGER/FUNCTION` statements put `;` on its own line. One-line statements keep `;` inline: every `DROP ...`, `db/schema/wheeck.sql`, `db/roles/wheeck.sql`, and `RETURN NEW;` / `END;` inside function bodies.
   - Views and functions: `DROP ... IF EXISTS`, then `CREATE OR REPLACE ...`.
   - Triggers: `DROP TRIGGER IF EXISTS ... ON <table>`, then a plain `CREATE TRIGGER` (`db/triggers/trg_sync_discard_status.sql`).
   - Tables: `CREATE TABLE IF NOT EXISTS`, with `CREATE INDEX` statements after the table.
@@ -128,12 +128,14 @@ from .constants import (OVERVIEW_DEFAULT_FONT, OVERVIEW_FORMATS, PATH_CFG_DB, PA
 
 **Patterns:**
 - **One transaction per document.** Follow the structure of `doc_scanner` in `src/wheeck/recording_docs.py`:
-  - Make the commit the last statement of the `try` body.
+  - Make the commit the last database statement of the `try` body. Only the `committed ...` log line follows it.
   - In `except Exception`, roll back inside its own nested `try`, so that a dead connection cannot replace the original exception.
   - Clean up the non-transactional side effects (discard PDFs).
   - End with a bare `raise`. The re-raise is required: without it `run()` archives a failed document.
   ```python
       querier.save_changes(True)
+      logger.info('committed %d pages of %s! [%d discarded pages]',
+                  doc_pages, working_doc_name, discarded_pages.number)
   except Exception:
       logger.critical('rolling back the whole doc %s... nothing will be saved!', working_doc_name)
       try: querier.save_changes(False)
@@ -174,7 +176,8 @@ from .constants import (OVERVIEW_DEFAULT_FONT, OVERVIEW_FORMATS, PATH_CFG_DB, PA
   - Format for both: `'%(asctime)s.%(msecs)03d [%(name)s] %(levelname)s - %(message)s'`.
 - Always pass values as lazy `%` arguments. Never use f-strings in logger calls (the codebase has 0) or `print` (also 0).
 - Message style:
-  - Lowercase, starting with a verb in `-ing` form.
+  - Lowercase, apart from acronyms (`API`, `HTTP`, `NULL`, `DDTs`), constant names (`PATTERN_QUANTITY`, `CHECK_DUPLICATE`) and the `JOB` markers.
+  - Messages that announce an action start with a verb in `-ing` form (`searching ...`, `saving ...`, `discarding ...`). Outcome and error messages do not (`committed ...`, `found ...`, `error on ...`).
   - `...` ends a step in progress; `!` ends an outcome.
   - Details go in square brackets at the end.
   ```python
@@ -207,7 +210,7 @@ from .constants import (OVERVIEW_DEFAULT_FONT, OVERVIEW_FORMATS, PATH_CFG_DB, PA
 - Use triple double quotes, with the opening and closing quotes on their own lines.
 - Start with a one-sentence summary that ends with a period. Then add `:param x:` and `:type x:` pairs, `:return:` and `:rtype:`, and `:raise X:` when the function raises.
 - State the default in prose ("defaults to 'IT'") and give examples with `(es. ...)`.
-- Start class docstrings with "The X object ...".
+- Start class docstrings with "The X object ..." (`Querier`, `LowQuerier`, `GeoMap`, `Delivery`). The enum uses "The MessageGenre enum ...", and exception classes start with "Raised when ...".
 ```python
 def city_distance(delivery_city: str) -> float | None:
     """
@@ -288,7 +291,7 @@ def city_distance(delivery_city: str) -> float | None:
 - Add a new database object as a new file under `db/<kind>/`, then add an `\ir` line to `db/install.sql` in dependency order.
 
 **Commits:**
-- Commit messages use Conventional Commits with a scope: `chore(deps): ...`, `refactor(db): ...`, `chore(config): ...`, `fix(...)`, `feat(...)`, `docs(...)`.
+- Commit messages use Conventional Commits, usually with a scope: `chore(deps): ...`, `refactor(db): ...`, `chore(config): ...`, `fix(...)`, `feat(...)`, `docs(...)`. Some omit it (`docs: map existing codebase`, `chore: remove .planning docs`). Most commits before `cd893bf` use plain subjects (`Fix error on managing path variable`).
 
 ---
 

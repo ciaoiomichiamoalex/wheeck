@@ -218,7 +218,7 @@ Current volumes are small: monthly DDT batches named `YYYY_MM_DDT_<first>_<last>
 **Regex extraction patterns:**
 - Files: `src/wheeck/constants.py:18-25`, `src/wheeck/recording_docs.py:133-138, 213-316`
 - Why fragile:
-  - Every pattern hardcodes the supplier's DDT layout, including Italian labels such as `Luogo di consegna`, `Quantità Prezzo` and `Targa automezzo`. Every pattern also depends on the `\r\n` line endings that `pypdfium2`'s `get_text_bounded()` produces.
+  - Every pattern hardcodes the supplier's DDT layout, including Italian labels such as `Luogo di consegna`, `Quantità Prezzo` and `Targa automezzo`. `PATTERN_CITY_DX`, `PATTERN_CITY_SX` and `PATTERN_VEHICLE` also depend on the `\r\n` line endings that `pypdfium2`'s `get_text_bounded()` produces. `PATTERN_QUANTITY` has `\r\n` only inside an optional group, and `PATTERN_DOC_NUMBER` has none.
   - A layout change by the supplier, or a `pypdfium2` upgrade that changes text output, discards every page. The run does not fail, so the problem shows up only as a flood of discards.
   - `PATTERN_QUANTITY` matches only quantities with a `,000` decimal part, and `re.search` takes only the first product line of a page.
   - `PATTERN_VEHICLE` requires a 7-character plate.
@@ -261,7 +261,7 @@ Current volumes are small: monthly DDT batches named `YYYY_MM_DDT_<first>_<last>
 **Excel templates:**
 - Files: `src/wheeck/overview_docs.py:33-53, 81-90`, `src/wheeck/constants.py:29-35`
 - Why fragile: Sheet names are hardcoded, and the templates are not versioned. `OVERVIEW_FORMATS[type(cell)]` raises `KeyError` for any column type outside `None`, `str`, `int` and `date`, for example `Decimal` if `distance` is ever added to the overview query.
-- Safe modification: Use `OVERVIEW_FORMATS.get(type(cell), 'General')`, as `Querier._EXCEL_FORMATS` already does at `src/core/querier.py:197`.
+- Safe modification: Use `OVERVIEW_FORMATS.get(type(cell), 'General')`. `Querier._EXCEL_FORMATS.get(type(cell))` at `src/core/querier.py:197, 204` avoids the `KeyError` but has no default, so unknown types get `None`.
 
 ## Scaling Limits
 

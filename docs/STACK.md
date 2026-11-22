@@ -21,14 +21,14 @@
 - `sqlite3.connect(..., autocommit=...)` in `src/core/querier.py` (line 227) needs Python 3.12 or later.
 - `typing.Self` in `src/core/querier.py` needs Python 3.11 or later.
 - `pyodbc` 5.5.0 declares `Requires-Python: >=3.11`.
-- `match` statements (`src/core/querier.py`) and `X | Y` type unions (all modules) need Python 3.10 or later.
+- `match` statements (`src/core/querier.py`) and `X | Y` type unions (`src/core/common.py`, `src/core/querier.py`, `src/geo/geo.py`, `src/wheeck/recording_docs.py`) need Python 3.10 or later.
 
 ## Runtime
 
 **Environment:**
 - CPython. The local virtualenv `.venv/` (gitignored) is CPython 3.15.1 on Windows.
 - Target OS: Windows.
-  - Code comments in `src/wheeck/recording_docs.py` (lines 175-177 and 619-621) cover Windows file-sharing violations on rename.
+  - Code comments in `src/wheeck/recording_docs.py` (lines 175-177) cover a Windows file-sharing violation on rename.
   - The ODBC driver name `PostgreSQL ANSI` in `config/querier.json` is the Windows psqlODBC driver name.
 - Launch: `src/main.py`. Imports are top-level package names (`import wheeck`, `from core import ...`, `from geo import ...`), so `src/` must be on `sys.path`.
   - The IDE run configuration in `.idea/workspace.xml` uses working directory `src/` and script `src/main.py`.
@@ -95,7 +95,7 @@ Direct dependencies, from `requirements.txt`:
     - `members`: list of `{vehicle, driver}` entries. They are the allowed plates and drivers for fuzzy matching.
       - Deliveries by drivers of vehicle-less members are excluded from the yearly summary.
       - `QUERY_GET_SUMMARY` has exactly two `vehicle = ?` slots, so it expects exactly two vehicles.
-    - `backup_dir`: optional directory that receives a copy of every recorded PDF.
+    - `backup_dir`: optional directory that receives a copy of every recorded PDF, except documents whose names match `PATTERN_DISCARD_DOC`. Those are still moved to `DDTs/recorded/`.
   - `config/querier.json`: committed template. Its real copy is `config/querier.local.json` (gitignored), read through `PATH_CFG_DB`. It holds a list of named connections. The app uses the `main` connection, with keys `name`, `driver`, `server`, `port`, `database`, `user`, `password`.
 - `decode_json` re-reads the config files on every call. `Querier` caches its parsed connection config in the class attribute `Querier._cache_config`.
 - Hardcoded settings in `src/wheeck/constants.py`:

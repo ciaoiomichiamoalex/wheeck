@@ -26,21 +26,22 @@
   - Client: `pyodbc` 5.5.0 over the psqlODBC driver (template driver name `PostgreSQL ANSI`), wrapped by `Querier` in `src/core/querier.py`. There is no ORM. Raw SQL constants live in `src/wheeck/constants.py`.
   - Transactions:
     - `Querier(save_changes=False)` turns autocommit off. `doc_scanner()` in `src/wheeck/recording_docs.py` runs one transaction per PDF and commits or rolls it back through `Querier.save_changes()`.
-    - Standalone callers open their own autocommit connection: `save_warning()` with no `querier` passed opens one with `save_changes=True`. `check_gaps()` and the overview generators also open their own connections.
+    - Only `save_warning()` opens an autocommit connection: with no `querier` passed it opens one with `save_changes=True`. `check_gaps()`, `check_duplicate()` with no `querier` passed and the overview generators (`generate_overview()`, `generate_summary()`, `generate_current()`) open their own connections with the default `save_changes=False`, so autocommit is off.
   - Connections are opened per function call and closed in `Querier.__del__`. There is no pool.
   - Objects, installed in order by `db/install.sql` (`psql -f db/install.sql`):
+    - Schema: `db/schema/wheeck.sql` runs `DROP SCHEMA IF EXISTS wheeck CASCADE`, then recreates the schema. Re-running the install deletes all existing data.
     - Tables:
       - `wheeck.delivery` (`db/tables/delivery.sql`)
       - `wheeck.delivery_history` (`db/tables/delivery_history.sql`). It has the same columns as `wheeck.delivery`, and `db/views/vw_delivery_gap.sql` unions the two. Nothing in `src/` writes to it.
       - `wheeck.delivery_warning` (`db/tables/delivery_warning.sql`)
       - `wheeck.delivery_discard` (`db/tables/delivery_discard.sql`)
     - Function and trigger: `wheeck.sync_discard_status()` and `trg_sync_discard_status`, which copy `delivery_warning.status` to `delivery_discard.status` for `DISCARD` messages (`db/functions/sync_discard_status.sql`, `db/triggers/trg_sync_discard_status.sql`).
+    - Role: login role `wheeck` with `SELECT, INSERT, UPDATE` and execute/sequence grants on the schema (`db/roles/wheeck.sql`). The script contains a plaintext role password. Replace the literal before install, put the new value in `config/querier.local.json`, and never copy it into docs.
     - Views:
       - `wheeck.vw_discard_message` (`db/views/vw_discard_message.sql`)
       - `wheeck.vw_gap_message` (`db/views/vw_gap_message.sql`)
       - `wheeck.vw_delivery_gap` (`db/views/vw_delivery_gap.sql`)
       - The first two parse the warning `message_text` written by `MessageGenre` in `src/wheeck/recording_docs.py`. That text format is a contract between the Python code and the SQL views.
-    - Role: login role `wheeck` with `SELECT, INSERT, UPDATE` and execute/sequence grants on the schema (`db/roles/wheeck.sql`). The script contains a plaintext role password. Replace the literal before install, put the new value in `config/querier.local.json`, and never copy it into docs.
   - Backup: at the end of every run in which at least one file name matched `PATTERN_WORKING_DOC`, even if that document rolled back, `run()` executes `CMD_BACKUP_DB` from `src/wheeck/constants.py` through `subprocess.run(..., shell=True)`.
     - The command is `pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres -n wheeck -w -c -F c` and writes `scheme/wheeck.bak.dump`.
     - The new dump replaces `scheme/wheeck.dump` only if it is not smaller than the old one. Otherwise it is deleted.
@@ -86,7 +87,7 @@
 - Python `logging`, configured by `get_logger()` in `src/core/common.py`.
   - The file handler writes INFO and above to `log/YYYY_MM_DD.log`, one file per day. Format: `%(asctime)s.%(msecs)03d [%(name)s] %(levelname)s - %(message)s`.
   - The console handler writes ERROR and above.
-  - Each module creates its logger with `get_logger(PATH_LOG, __name__)`.
+  - `src/geo/geo.py`, `src/wheeck/overview_docs.py` and `src/wheeck/recording_docs.py` create their logger with `get_logger(PATH_LOG, __name__)`. `src/main.py` calls `get_logger(wheeck.PATH_LOG)` with no name, so its logger uses the default name `main`.
 - There is no rotation or retention. Daily files of about 0.5-0.8 MB pile up in `log/` (gitignored).
 
 ## CI/CD & Deployment

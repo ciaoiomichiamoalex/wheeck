@@ -1,10 +1,14 @@
-<!-- generated-by: codebase-mapper -->
+<!-- generated-by: gsd-doc-writer -->
 <!-- refreshed: 2026-11-22 -->
 # Architecture
 
 **Analysis Date:** 2026-11-22
 
 ## System Overview
+
+wheeck is a single-process batch ETL application that records deliveries from Italian transport documents (DDT, *documento di trasporto*). Its inputs are the DDT PDFs queued in `DDTs/` and the JSON configuration in `config/*.local.json`. Each run extracts the text of every page with `pypdfium2` and parses it with regular expressions. It resolves driving distances through OpenRouteService and writes the deliveries, discards and warnings to the PostgreSQL schema `wheeck` with one transaction per document. Its outputs are the database rows, single-page discard PDFs in `DDTs/discarded/`, monthly and yearly Excel workbooks in `res/`, and a `pg_dump` backup in `scheme/`. The code is layered: a thin entry script, the procedural application package `wheeck`, and two small infrastructure packages, `core` (database and logging) and `geo` (OpenRouteService).
+
+## Component Diagram
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -135,7 +139,7 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 ### Excel Report Flow
 
 1. `generate_current()` selects the (year, month) pairs recorded in the last 24 h with `QUERY_GET_LAST_OVERVIEWS` (`src/wheeck/overview_docs.py:98-110`).
-2. `generate_overview(year, month)` loads `res/YYYY_MM.xlsx`, or the template `scheme/overview.xlsx` if the file does not exist yet. It fills sheet `consegne` and writes the month's dates into sheets `cifre`, `litri`, `cifre manuale`, `litri manuale` (`src/wheeck/overview_docs.py:15-59`).
+2. `generate_overview(year, month)` loads `res/YYYY_MM.xlsx`, or the template `scheme/overview.xlsx` if the file does not exist yet (the templates are gitignored, see Directory Structure Rationale). It fills sheet `consegne` and writes the month's dates into sheets `cifre`, `litri`, `cifre manuale`, `litri manuale` (`src/wheeck/overview_docs.py:15-59`).
 3. `generate_summary(year)` always starts from `scheme/summary.xlsx`. It fills sheet `viaggi` with the longest trip per day for each vehicle, side by side. `QUERY_GET_SUMMARY` takes exactly two vehicle parameters, so `members` must list exactly two vehicles. Deliveries by members listed without a vehicle are excluded (`src/wheeck/overview_docs.py:62-95`).
 
 **State Management:**
@@ -174,6 +178,30 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 - Purpose: Geocode an address and compute driving distance in km.
 - Examples: `src/geo/geo.py:12`
 - Pattern: Returns `None` on any `openrouteservice` API, HTTP or timeout error and logs it. Callers treat `None` as an unknown distance (nullable `distance` column).
+
+## Directory Structure Rationale
+
+The code is split by responsibility: `src/core/` and `src/geo/` are reusable wrappers with no business logic, and `src/wheeck/` holds everything specific to DDT recording. Runtime data lives in top-level folders next to `src/`, resolved from `PATH_PRJ` in `src/wheeck/constants.py`. See `docs/STRUCTURE.md` for the file-level layout.
+
+```text
+wheeck/
+├── src/
+│   ├── main.py        # Entry script for the batch run
+│   ├── wheeck/        # Application package: recording pipeline, Excel reports, constants and SQL
+│   ├── core/          # Infrastructure: Querier (pyodbc), LowQuerier (sqlite3), decode_json, get_logger
+│   └── geo/           # Infrastructure: GeoMap over the openrouteservice client
+├── db/                # PostgreSQL schema scripts, one file per object, run through db/install.sql
+├── config/            # Committed JSON templates; the real *.local.json copies are gitignored
+├── scheme/            # Excel templates (overview.xlsx, summary.xlsx) and pg_dump backups
+├── DDTs/              # Input queue, with discarded/ and recorded/ subfolders
+├── res/               # Generated Excel workbooks
+└── log/               # Daily log files
+```
+
+- `db/` keeps one file per table, view, function, trigger and role, so each object can be reviewed and re-applied on its own. `db/install.sql` fixes the creation order.
+- `config/` separates committed templates from gitignored real values, so credentials and the OpenRouteService key stay out of the repository.
+- `DDTs/`, `res/` and `log/` are gitignored. So are `*.xlsx` and `*.dump`, which means the templates in `scheme/` are not in the repository and must be supplied locally.
+- The code never creates folders. `DDTs/discarded/`, `DDTs/recorded/`, `res/` and `log/` must exist before the first run. If `log/` is missing, `get_logger` writes to a file named `log` in the project root instead.
 
 ## Entry Points
 
