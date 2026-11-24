@@ -216,7 +216,7 @@ wheeck/
 - Responsibilities: Re-exports `generate_overview`, `generate_summary`, `generate_current`, `check_gaps`, `check_duplicate`, `check_similarity`, `discard_doc`, `doc_scanner`, `save_warning`, `run`, `RecordingError` and the path constants, for regenerating a report or re-running a step by hand.
 
 **Database install:**
-- Location: the `\ir` sequence in the README (Installation, step 2). The repository tracks no install script.
+- Location: the `\ir` sequence in the README (Installation, step 3). The repository tracks no install script.
 - Triggers: run by hand at a `psql` prompt started from the repository root.
 - Responsibilities: Creates tables, function, trigger, role and views in schema `public` of the database `wheeck`, in dependency order. The database must exist first: no script creates it.
 
