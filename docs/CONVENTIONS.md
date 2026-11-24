@@ -93,7 +93,7 @@ Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src
       ;
   """
   ```
-- `.sql` files in `sql/` use UPPERCASE keywords and a 4-space indent. `CREATE TABLE/VIEW/INDEX/TRIGGER/FUNCTION` statements put `;` on its own line. One-line statements keep `;` inline: every `DROP ...`, `sql/database/wheeck.sql`, `sql/roles/wheeck.sql`, and `RETURN NEW;` / `END;` inside function bodies.
+- `.sql` files in `sql/` use UPPERCASE keywords and a 4-space indent. `CREATE TABLE/VIEW/INDEX/TRIGGER/FUNCTION` statements put `;` on its own line. One-line statements keep `;` inline: every `DROP ...`, `sql/roles/wheeck.sql`, and `RETURN NEW;` / `END;` inside function bodies.
   - Views and functions: `DROP ... IF EXISTS`, then `CREATE OR REPLACE ...`.
   - Triggers: `DROP TRIGGER IF EXISTS ... ON <table>`, then a plain `CREATE TRIGGER` (`sql/triggers/trg_sync_discard_status.sql`).
   - Tables: `CREATE TABLE IF NOT EXISTS`, with `CREATE INDEX` statements after the table.

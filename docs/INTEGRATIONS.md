@@ -29,7 +29,7 @@
     - Only `save_warning()` opens an autocommit connection: with no `querier` passed it opens one with `save_changes=True`. `check_gaps()`, `check_duplicate()` with no `querier` passed and the overview generators (`generate_overview()`, `generate_summary()`, `generate_current()`) open their own connections with the default `save_changes=False`, so autocommit is off.
   - Connections are opened per function call and closed in `Querier.__del__`. There is no pool.
   - Objects, installed in this order with the psql `\ir` meta-command (sequence in the README):
-    - Database: `sql/database/wheeck.sql` runs `DROP DATABASE IF EXISTS wheeck`, then recreates the database. Re-running the install deletes all existing data.
+    - Database: created by hand before the install. No script in `sql/` creates or drops it.
     - Tables:
       - `public.delivery` (`sql/tables/delivery.sql`)
       - `public.delivery_history` (`sql/tables/delivery_history.sql`). It has the same columns as `public.delivery`, and `sql/views/vw_delivery_gap.sql` unions the two. Nothing in `src/` writes to it.

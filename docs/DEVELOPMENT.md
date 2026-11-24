@@ -36,7 +36,7 @@ wheeck is developed and run on Windows. The commands below use Git Bash.
 
    <!-- VERIFY: the run references scheme/overview.xlsx and scheme/summary.xlsx, which are not in the repository -->
 
-5. Install the database as described in the README: run its `\ir` lines at a `psql` prompt started from the repository root. The first script drops the `wheeck` database, so it deletes all recorded data.
+5. Install the database as described in the README: create an empty `wheeck` database, then run the `\ir` lines at a `psql` prompt on it, started from the repository root.
 
 There is no `.env` file, no build step and no compile step. The application runs straight from `src/`.
 
@@ -78,7 +78,7 @@ The project has no build step, no task runner and no `Makefile`. Run these comma
 | `pip install -r requirements.txt` | Installs the four runtime dependencies (`openpyxl`, `openrouteservice`, `pyodbc`, `pypdfium2`), pinned with `~=`. There are no development dependencies and no lockfile. |
 | `cd src && python main.py` | Runs the batch on the PDFs in `DDTs/` (see [No development mode](#no-development-mode)). |
 | `cd src && python -c "from wheeck import generate_overview; generate_overview(2024, 1)"` | Rebuilds one monthly workbook (`res/2024_01.xlsx`) from the database. `generate_summary(year)` does the same for the yearly trip summary. |
-| `psql -U postgres -d postgres`, then the `\ir` lines from the README | Installs the database by running the scripts in `sql/` in dependency order. **It drops the `wheeck` database and all its data first.** |
+| `psql -U postgres -d wheeck`, then the `\ir` lines from the README | Installs the objects by running the scripts in `sql/` in dependency order. The `wheeck` database must already exist. |
 | `.venv/Scripts/python.exe -m py_compile src/main.py src/core/*.py src/geo/*.py src/wheeck/*.py` | Checks the syntax of every module. It needs no database. Run it in Git Bash, because PowerShell does not expand the `*.py` globs. |
 | `cd src && ../.venv/Scripts/python.exe -c "import core; print(core.__version__)"` | Import smoke test of the `core` package. It needs no database and writes no log file. |
 

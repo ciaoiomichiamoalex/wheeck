@@ -22,7 +22,6 @@ wheeck/
 │       ├── recording_docs.py   # DDT pipeline: run, doc_scanner, Delivery, MessageGenre, helpers
 │       └── overview_docs.py    # Excel overview/summary generation
 ├── sql/                        # PostgreSQL DDL, one file per object
-│   ├── database/wheeck.sql     # DROP + CREATE DATABASE wheeck
 │   ├── tables/                 # delivery, delivery_history, delivery_warning, delivery_discard
 │   ├── functions/              # sync_discard_status (PL/pgSQL trigger function)
 │   ├── triggers/               # trg_sync_discard_status
@@ -71,7 +70,7 @@ wheeck/
 
 **`sql/`:**
 - Purpose: Full DDL for PostgreSQL database `wheeck` (schema `public`). Each object has its own file, grouped by object kind.
-- Contains: `.sql` scripts only. Install them in dependency order with the psql `\ir` meta-command (sequence in the README); the install drops and recreates the database. No install script is tracked.
+- Contains: `.sql` scripts only. Install them in dependency order with the psql `\ir` meta-command (sequence in the README); the database must exist first, because no script creates it. No install script is tracked.
 - Key files: `sql/views/vw_delivery_gap.sql` (gap logic), `sql/views/vw_discard_message.sql` (parses `DISCARD` message text)
 
 **`config/`:**
@@ -136,7 +135,7 @@ wheeck/
 
 **Directories:**
 - Python packages: short lowercase single word (`core`, `geo`, `wheeck`).
-- `sql/` subfolders: plural object kind (`tables`, `views`, `functions`, `triggers`, `roles`), except `database`.
+- `sql/` subfolders: plural object kind (`tables`, `views`, `functions`, `triggers`, `roles`).
 
 **Identifiers:**
 - Constants in `src/wheeck/constants.py` use a kind prefix: `PATH_*`, `PATTERN_*`, `QUERY_<VERB>_<OBJECT>` (`QUERY_INSERT_DELIVERY`, `QUERY_GET_GAP`, `QUERY_CHECK_DUPLICATE`), `CMD_*`, `OVERVIEW_*`.

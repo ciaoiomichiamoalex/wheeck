@@ -27,17 +27,17 @@ The project runs on a Windows workstation. The commands below use Git Bash.
    pip install -r requirements.txt
    ```
 
-2. Set the password of the `wheeck` database role in `sql/roles/wheeck.sql`, then install the database as a superuser. Start `psql` from the repository root:
+2. Create an empty database named `wheeck` as a superuser. The scripts in `sql/` do not create it.
+
+3. Set the password of the `wheeck` database role in `sql/roles/wheeck.sql`, then install the objects as a superuser. Start `psql` on the `wheeck` database from the repository root:
 
    ```bash
-   psql -U postgres -d postgres
+   psql -U postgres -d wheeck
    ```
 
    At the `psql` prompt, run the object scripts in dependency order with the `\ir` meta-command:
 
    ```
-   \ir sql/database/wheeck.sql
-   \c wheeck
    \ir sql/tables/delivery.sql
    \ir sql/tables/delivery_history.sql
    \ir sql/tables/delivery_warning.sql
@@ -50,16 +50,16 @@ The project runs on a Windows workstation. The commands below use Git Bash.
    \ir sql/views/vw_delivery_gap.sql
    ```
 
-   The repository does not track an install script. To reuse these lines, save them in a local file at the repository root and run it with `psql -f`. `sql/database/wheeck.sql` starts with `DROP DATABASE IF EXISTS wheeck`, so running the install again deletes all recorded data. `\c wheeck` connects to the new database, so the other scripts create their objects in its `public` schema.
+   The repository does not track an install script. To reuse these lines, save them in a local file at the repository root and run it with `psql -f`. The scripts create their objects in the `public` schema of the `wheeck` database.
 
-3. Copy each committed config template to its gitignored `*.local.json` sibling and fill in the real values (see [Configuration](#configuration)):
+4. Copy each committed config template to its gitignored `*.local.json` sibling and fill in the real values (see [Configuration](#configuration)):
 
    ```bash
    cp config/wheeck.json config/wheeck.local.json
    cp config/querier.json config/querier.local.json
    ```
 
-4. Create the runtime folders, which are missing from a fresh clone (`DDTs/`, `log/` and `res/` are gitignored, and `scheme/` has no tracked files):
+5. Create the runtime folders, which are missing from a fresh clone (`DDTs/`, `log/` and `res/` are gitignored, and `scheme/` has no tracked files):
 
    ```bash
    mkdir -p DDTs/discarded DDTs/recorded log res scheme
@@ -67,7 +67,7 @@ The project runs on a Windows workstation. The commands below use Git Bash.
 
    `log/` must be a directory: if it is missing, the logger writes to a plain file named `log` instead.
 
-5. Put the two Excel templates in `scheme/`. They are gitignored (`*.xlsx`), so they do not come with the repository:
+6. Put the two Excel templates in `scheme/`. They are gitignored (`*.xlsx`), so they do not come with the repository:
    - `scheme/overview.xlsx`, with the sheets `consegne`, `cifre`, `litri`, `cifre manuale` and `litri manuale`
    - `scheme/summary.xlsx`, with the sheet `viaggi`
 

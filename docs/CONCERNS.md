@@ -51,11 +51,11 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 - Impact: A change of database host or port moves the application but not the backup, and nothing reports the mismatch.
 - Fix approach: Build the `pg_dump` argument list from the querier config and call `subprocess.run([...])` without `shell=True`.
 
-**No schema migrations, and the install is destructive:**
-- Issue: The install sequence starts with `sql/database/wheeck.sql`, whose first line is `DROP DATABASE IF EXISTS wheeck;`. The `CREATE TABLE IF NOT EXISTS` statements suggest idempotence, but the database is always dropped first. `CREATE INDEX` statements have no `IF NOT EXISTS`. `CREATE USER wheeck` fails when the role exists, and `psql` continues past errors unless `ON_ERROR_STOP` is set.
-- Files: `sql/database/wheeck.sql:1`, `sql/roles/wheeck.sql:9`, `sql/tables/*.sql`
-- Impact: Running the install against the production database deletes every delivery, warning and history row. The only way to change the schema is a manual `ALTER` or a reinstall followed by a restore from `scheme/wheeck.dump`.
-- Fix approach: Move the `DROP DATABASE` into a separate, explicitly named reset script. Run `\set ON_ERROR_STOP on` before the `\ir` lines. Keep numbered migration scripts for later changes.
+**No schema migrations, and the install is not idempotent:**
+- Issue: The `CREATE TABLE IF NOT EXISTS` statements suggest idempotence, but `CREATE INDEX` statements have no `IF NOT EXISTS`. `CREATE USER wheeck` fails when the role exists, and `psql` continues past errors unless `ON_ERROR_STOP` is set.
+- Files: `sql/roles/wheeck.sql:9`, `sql/tables/*.sql`
+- Impact: Running the install again keeps the data but ends with errors that are easy to miss. The only way to change the schema is a manual `ALTER`, or a new database followed by a restore from `scheme/wheeck.dump`.
+- Fix approach: Run `\set ON_ERROR_STOP on` before the `\ir` lines. Keep numbered migration scripts for later changes.
 
 **Dead code:**
 - Files: `LowQuerier` (`src/core/querier.py:211-293`, exported from `src/core/__init__.py:2`, never used), `Querier.save_excel` (`src/core/querier.py:174-208`), `Querier.cursor` property (`src/core/querier.py:97-105`), `GeoMap.get_distance` (`src/geo/geo.py:54-76`), `Delivery.calculate_distance` (`src/wheeck/recording_docs.py:63-67`, referenced only in a comment), and the `!= -1` check at `recording_docs.py:391`, which its own comment calls dead code.
@@ -311,7 +311,7 @@ Current volumes are small: monthly DDT batches named `YYYY_MM_DDT_<first>_<last>
 - Blocks: Unattended operation. Every stuck document needs a manual rename.
 
 **Schema migrations:**
-- Problem: The only provisioning path is the destructive full install with psql `\ir`.
+- Problem: The only provisioning path is the full install with psql `\ir` on an empty database.
 - Blocks: Evolving the schema of a populated database safely.
 
 **Startup validation and bootstrap:**

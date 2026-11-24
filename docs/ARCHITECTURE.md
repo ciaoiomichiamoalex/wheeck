@@ -60,7 +60,7 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 | DB access | `Querier` (pyodbc, chained `run().fetch()`, commit/rollback, Excel export) and `LowQuerier` (sqlite3 variant) | `src/core/querier.py` |
 | Common utilities | `decode_json` (JSON file filter), `get_logger` (daily file + console logger) | `src/core/common.py` |
 | Geo wrapper | `GeoMap.search`, `get_distance`, `get_distance_from_coords` over the `openrouteservice` client | `src/geo/geo.py` |
-| Database DDL | Database, tables, views, trigger function, role | `sql/` |
+| Database DDL | Tables, views, trigger function, role | `sql/` |
 
 ## Pattern Overview
 
@@ -218,7 +218,7 @@ wheeck/
 **Database install:**
 - Location: the `\ir` sequence in the README (Installation, step 2). The repository tracks no install script.
 - Triggers: run by hand at a `psql` prompt started from the repository root.
-- Responsibilities: Drops and recreates database `wheeck` (`sql/database/wheeck.sql` uses `DROP DATABASE IF EXISTS wheeck`). After `\c wheeck`, it creates tables, function, trigger, role and views in schema `public`, in dependency order.
+- Responsibilities: Creates tables, function, trigger, role and views in schema `public` of the database `wheeck`, in dependency order. The database must exist first: no script creates it.
 
 ## Architectural Constraints
 

@@ -259,9 +259,8 @@ self.assertTrue(re.search(PATTERN_WORKING_DOC, '2026_01_DDT_0001_0100.pdf'))
 **Integration Tests:**
 - Not present.
 - Manual path:
-  1. Install the database on a **disposable** PostgreSQL server with the `\ir` sequence from the README.
+  1. Create an empty database on a **disposable** PostgreSQL server and install the objects with the `\ir` sequence from the README.
   2. Point a `main` entry in `config/querier.local.json` at that database.
-- Warning: `sql/database/wheeck.sql` runs `DROP DATABASE IF EXISTS wheeck`. Never run the install on a server whose `wheeck` database holds data you need.
 - `sql/roles/wheeck.sql` runs `CREATE USER wheeck`. Roles are cluster-wide, so on a cluster that already has the role this statement fails.
 - `Querier` also accepts `conn_str=` (a dict) and `conn_name=`. The `wheeck` functions never pass these and always use `Querier(cfg_in=PATH_CFG_DB)`; `save_warning` (`src/wheeck/recording_docs.py`) also passes `save_changes=True`.
 

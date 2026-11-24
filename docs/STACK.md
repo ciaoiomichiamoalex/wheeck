@@ -10,7 +10,7 @@
 
 **Secondary:**
 - SQL (PostgreSQL dialect, including PL/pgSQL): the database objects under `sql/`
-  - DDL scripts: `sql/database/wheeck.sql`, `sql/tables/*.sql`, `sql/views/*.sql`
+  - DDL scripts: `sql/tables/*.sql`, `sql/views/*.sql`
   - PL/pgSQL trigger function: `sql/functions/sync_discard_status.sql`
   - Trigger: `sql/triggers/trg_sync_discard_status.sql`
   - Role and grants: `sql/roles/wheeck.sql`
@@ -115,7 +115,7 @@ Direct dependencies, from `requirements.txt`:
 - Python 3.12 or later, with a virtualenv: `python -m venv .venv`, then `.venv\Scripts\pip install -r requirements.txt`.
 - psqlODBC installed, registered under the driver name given in `config/querier.local.json`. The template uses `PostgreSQL ANSI`.
 - A PostgreSQL server reachable at the configured `server`/`port`. The template uses `127.0.0.1:5432`, database `wheeck`.
-- The database must be installed once as a superuser, with the `\ir` sequence in the README. `sql/database/wheeck.sql` runs `DROP DATABASE IF EXISTS wheeck`, so re-running the install wipes all data.
+- The `wheeck` database must be created by hand, then installed once as a superuser with the `\ir` sequence in the README.
 - PostgreSQL client tools on `PATH`:
   - `psql`, for the install.
   - `pg_dump`, for the automatic backup at the end of each run. It runs once any file name in `DDTs/` matches `PATTERN_WORKING_DOC`, even if that document rolled back.
