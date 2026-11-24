@@ -44,7 +44,7 @@ The file is a list of named connection entries. A single object also works, beca
     "driver": "PostgreSQL ANSI",
     "server": "127.0.0.1",
     "port": 5432,
-    "database": "postgres",
+    "database": "wheeck",
     "user": "wheeck",
     "password": null
   }
@@ -57,8 +57,8 @@ The file is a list of named connection entries. A single object also works, beca
 | `driver` | **Required** | none | ODBC driver name, as registered on the machine. The template's `PostgreSQL ANSI` is the Windows psqlODBC driver. `Querier` wraps the name in braces before passing it to `pyodbc.connect`. |
 | `server` | **Required** | none | PostgreSQL host. |
 | `port` | **Required** | none | PostgreSQL port. |
-| `database` | **Required** | none | Database that contains the `wheeck` schema. |
-| `user` | **Required** | none | Login role. The schema scripts create the role `wheeck` with `SELECT, INSERT, UPDATE` on the schema (`sql/roles/wheeck.sql`). |
+| `database` | **Required** | none | Database `wheeck`. Its `public` schema holds the tables and views. |
+| `user` | **Required** | none | Login role. The `sql/` scripts create the role `wheeck` with `SELECT, INSERT, UPDATE` on schema `public` (`sql/roles/wheeck.sql`). |
 | `password` | **Required** | none | Password of that role. It must match the password that `sql/roles/wheeck.sql` sets when it creates the role. |
 
 `Querier` keeps the parsed entry in the class attribute `Querier._cache_config`. Within one process the file is read only once per file path and connection name, so edits apply from the next run.
@@ -99,7 +99,7 @@ Rules that follow from the code:
 
 - **Upper case.** The plate and driver extracted by `PATTERN_VEHICLE` are upper-cased before the comparison. `members` values must therefore be upper case to match exactly.
 - **Plates.** `PATTERN_VEHICLE` captures the plate as exactly 7 word characters.
-- **Fuzzy matching.** A value that does not match exactly is replaced by the most similar configured value when the `difflib` ratio is above 0.5 (`check_similarity`). Otherwise a warning is saved to `wheeck.delivery_warning`.
+- **Fuzzy matching.** A value that does not match exactly is replaced by the most similar configured value when the `difflib` ratio is above 0.5 (`check_similarity`). Otherwise a warning is saved to `public.delivery_warning`.
 - **Default driver.** If the extracted driver cannot be resolved, the page gets the `driver` of the entry whose `vehicle` matches the page's vehicle. Pair each vehicle with its usual driver.
 - **Drivers without a vehicle.** An entry with `"vehicle": null` declares a driver with no own vehicle. Deliveries by these drivers are excluded from the yearly summary (`vehicle_driver NOT IN (...)` in `QUERY_GET_SUMMARY`).
 - **Summary shape.** `QUERY_GET_SUMMARY` has exactly two `vehicle = ?` slots, and the vehicles are sorted alphabetically. The first vehicle fills the `_0` columns and the second fills the `_1` columns of `res/{year}_TRIPS.xlsx`. The summary only works with:
@@ -126,7 +126,7 @@ There is no startup validation. Neither file is loaded when the process starts. 
 | `main` entry in `querier.local.json` | Same | `IOError: Querier: no config <main> found in <path>!` |
 | Any `querier.local.json` key except `name` | Same | `KeyError` on the missing key. `driver`, `server`, `port`, `database`, `user` and `password` are read with `config['...']`. A missing `name` gives the `no config <main> found` error above, because `name` only filters entries in `decode_json`. |
 | `config/wheeck.local.json` file | First new delivery city, or first page with a vehicle match | `FileNotFoundError` from `decode_json` |
-| `ors_api_key` | First delivery city that has no stored distance in `wheeck.delivery` | A `null` key makes the OpenRouteService client raise `ValueError: No API key was specified...` |
+| `ors_api_key` | First delivery city that has no stored distance in `public.delivery` | A `null` key makes the OpenRouteService client raise `ValueError: No API key was specified...` |
 | `departure_coords` | Same | `KeyError` if absent |
 | `members` | First page where `PATTERN_VEHICLE` matches. Later, the yearly summary. | `KeyError` if absent. If there is no vehicle or no driver, `check_similarity` raises `IndexError`. This is the case for the unedited template, where both are `null`. |
 | `backup_dir` | After each recorded document | Optional, read with `.get()` |
@@ -156,7 +156,7 @@ These settings are not configurable. Changing them means editing the code.
 |---------|-------|----------|
 | Config file paths | `config/wheeck.local.json`, `config/querier.local.json` | `PATH_CFG_PRJ`, `PATH_CFG_DB` in `src/wheeck/constants.py` |
 | Project folders | `DDTs/`, `DDTs/discarded/`, `DDTs/recorded/`, `log/`, `res/`, `scheme/`, all relative to the repository root | `PATH_*` in `src/wheeck/constants.py` |
-| Database backup | `pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres -n wheeck -w -c -F c`, written to `scheme/wheeck.bak.dump` and then kept as `scheme/wheeck.dump` | `CMD_BACKUP_DB` in `src/wheeck/constants.py`, `run()` |
+| Database backup | `pg_dump -U postgres -h 127.0.0.1 -p 5432 -d wheeck -w -c -F c`, written to `scheme/wheeck.bak.dump` and then kept as `scheme/wheeck.dump` | `CMD_BACKUP_DB` in `src/wheeck/constants.py`, `run()` |
 | Geocoding country | `IT` | `GeoMap.search` default in `src/geo/geo.py` |
 | Routing | profile `driving-car`, snapping radius `500` m | `GeoMap.get_distance_from_coords` in `src/geo/geo.py` |
 | ORS throttle | 1.5 s pause after each new city (the code comment cites a 40 calls/min limit) | `resolve_distances` in `src/wheeck/recording_docs.py` |
@@ -172,6 +172,6 @@ There is no per-environment mechanism:
 - There are no `.env` files, no `NODE_ENV`-style switch and no development, staging or production config sets.
 - Each checkout has exactly one `config/wheeck.local.json` and one `config/querier.local.json`. To point a checkout at another database or API key, edit those files.
 - `config/querier.local.json` can hold several named entries, but the application always connects with `main`. Switching databases therefore means changing the `main` entry.
-- The backup command ignores `config/querier.local.json`. It always connects as `postgres` to `127.0.0.1:5432`, database `postgres`. If the database is elsewhere, `pg_dump` fails, the run logs `error during backup database schema...` at `CRITICAL` and carries on. To fix this, edit `CMD_BACKUP_DB` in `src/wheeck/constants.py`.
+- The backup command ignores `config/querier.local.json`. It always connects as `postgres` to `127.0.0.1:5432`, database `wheeck`. If the database is elsewhere, `pg_dump` fails, the run logs `error during backup database schema...` at `CRITICAL` and carries on. To fix this, edit `CMD_BACKUP_DB` in `src/wheeck/constants.py`.
 
 <!-- VERIFY: PostgreSQL runs on the same machine as wheeck (127.0.0.1:5432), as both the template and CMD_BACKUP_DB assume -->

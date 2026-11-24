@@ -49,7 +49,7 @@ Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src
   - `OVERVIEW_*`: Excel formatting.
 
 **SQL (`sql/` and `QUERY_*` strings):**
-- Identifiers are `snake_case` and always schema-qualified (`wheeck.delivery`).
+- Identifiers are `snake_case` and always schema-qualified (`public.delivery`).
 - Name constraints and objects with these prefixes:
   - Primary key: `pk_<table>_id`.
   - Unique constraint: `uq_<table>_<columns>`.
@@ -87,13 +87,13 @@ Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src
 - SQL constants are triple-double-quoted strings that start with `"""\`, so they do not begin with a newline. Indent the body by 4 spaces, write keywords in UPPERCASE and put the closing `;` on its own line:
   ```python
   QUERY_UPDATE_WARNING = """\
-      UPDATE wheeck.delivery_warning
+      UPDATE public.delivery_warning
       SET status = FALSE
       WHERE id = ?
       ;
   """
   ```
-- `.sql` files in `sql/` use UPPERCASE keywords and a 4-space indent. `CREATE TABLE/VIEW/INDEX/TRIGGER/FUNCTION` statements put `;` on its own line. One-line statements keep `;` inline: every `DROP ...`, `sql/schema/wheeck.sql`, `sql/roles/wheeck.sql`, and `RETURN NEW;` / `END;` inside function bodies.
+- `.sql` files in `sql/` use UPPERCASE keywords and a 4-space indent. `CREATE TABLE/VIEW/INDEX/TRIGGER/FUNCTION` statements put `;` on its own line. One-line statements keep `;` inline: every `DROP ...`, `sql/database/wheeck.sql`, `sql/roles/wheeck.sql`, and `RETURN NEW;` / `END;` inside function bodies.
   - Views and functions: `DROP ... IF EXISTS`, then `CREATE OR REPLACE ...`.
   - Triggers: `DROP TRIGGER IF EXISTS ... ON <table>`, then a plain `CREATE TRIGGER` (`sql/triggers/trg_sync_discard_status.sql`).
   - Tables: `CREATE TABLE IF NOT EXISTS`, with `CREATE INDEX` statements after the table.

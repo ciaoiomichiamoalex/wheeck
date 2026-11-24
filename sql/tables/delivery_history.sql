@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS wheeck.delivery_history (
+CREATE TABLE IF NOT EXISTS public.delivery_history (
     id INTEGER GENERATED ALWAYS AS IDENTITY,
     document_number INTEGER NOT NULL,
     document_genre CHAR(2) NOT NULL,
@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS wheeck.delivery_history (
 ;
 
 CREATE INDEX idx_delivery_history_company_name
-    ON wheeck.delivery_history (company_name)
+    ON public.delivery_history (company_name)
 ;
 CREATE INDEX idx_delivery_history_delivery_city
-    ON wheeck.delivery_history (delivery_city)
+    ON public.delivery_history (delivery_city)
 ;

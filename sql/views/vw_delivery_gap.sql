@@ -1,9 +1,9 @@
-DROP VIEW IF EXISTS wheeck.vw_delivery_gap;
-CREATE OR REPLACE VIEW wheeck.vw_delivery_gap AS
+DROP VIEW IF EXISTS public.vw_delivery_gap;
+CREATE OR REPLACE VIEW public.vw_delivery_gap AS
 WITH all_delivery AS (
-    SELECT * FROM wheeck.delivery
+    SELECT * FROM public.delivery
     UNION ALL
-    SELECT * FROM wheeck.delivery_history
+    SELECT * FROM public.delivery_history
 ), doc_nums AS (
     SELECT dn.document_year,
         s.document_number
@@ -34,7 +34,7 @@ FROM doc_nums dn
     LEFT JOIN all_delivery d
         ON dn.document_number = d.document_number
         AND dn.document_year = EXTRACT(YEAR FROM d.document_date)
-    LEFT JOIN wheeck.vw_discard_message dm
+    LEFT JOIN public.vw_discard_message dm
         ON dn.document_number = dm.document_number
         AND dn.document_year = EXTRACT(YEAR FROM dm.document_date)
 WHERE d.document_number IS NULL

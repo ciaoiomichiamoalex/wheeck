@@ -7,9 +7,9 @@ This guide takes a fresh clone of wheeck to a first recorded batch of DDTs. whee
 
 - **Windows.** The template ODBC driver name `PostgreSQL ANSI` is the Windows psqlODBC name, and the file handling in `src/wheeck/recording_docs.py` is written around Windows file locks.
 - **Python >= 3.12.** Nothing in the repository pins the version. The floor comes from `sqlite3.connect(..., autocommit=...)` in `src/core/querier.py` (3.12) and `pyodbc` 5.5 (3.11).
-- **PostgreSQL server**, with access as the `postgres` superuser for the schema install. The config template targets `127.0.0.1:5432`, database `postgres`, and the backup command in `src/wheeck/constants.py` is hardcoded to the same host, port and database.
+- **PostgreSQL server**, with access as the `postgres` superuser for the database install. The config template targets `127.0.0.1:5432`, database `wheeck`, and the backup command in `src/wheeck/constants.py` is hardcoded to the same host, port and database.
 - **psqlODBC driver**, registered under the name you put in `driver` (the template uses `PostgreSQL ANSI`). Its bitness must match your Python (64-bit driver for 64-bit Python).
-- **PostgreSQL client tools on `PATH`:** `psql` for the schema install and `pg_dump` for the backup at the end of each run.
+- **PostgreSQL client tools on `PATH`:** `psql` for the database install and `pg_dump` for the backup at the end of each run.
 - **OpenRouteService API key**, and outbound HTTPS access to OpenRouteService. Each new delivery city costs one geocoding call and one directions call.
 - **Files that are not in the repository:**
   - the two Excel templates `scheme/overview.xlsx` and `scheme/summary.xlsx` (gitignored as `*.xlsx`)
@@ -29,7 +29,7 @@ This guide takes a fresh clone of wheeck to a first recorded batch of DDTs. whee
 
    Keep the virtualenv active for every command that follows.
 
-2. Install the database schema:
+2. Install the database:
    1. Open `sql/roles/wheeck.sql` and change the password in the `CREATE USER` line. This sets the password of the `wheeck` role that the application connects with.
    2. From the repository root, open `psql` as a superuser, against the database that the config points to:
 
@@ -37,9 +37,9 @@ This guide takes a fresh clone of wheeck to a first recorded batch of DDTs. whee
       psql -U postgres -d postgres
       ```
 
-   3. At the `psql` prompt, run the `\ir` lines listed in the README ([Installation](../README.md#installation), step 2). They run the files under `sql/` in order: schema, tables, function, trigger, role, views.
+   3. At the `psql` prompt, run the `\ir` lines listed in the README ([Installation](../README.md#installation), step 2). They run the files under `sql/` in order: database, then, after `\c wheeck`, tables, function, trigger, role, views.
 
-   The repository does not track an install script. The first file, `sql/schema/wheeck.sql`, runs `DROP SCHEMA IF EXISTS wheeck CASCADE`, so running the install again deletes every recorded delivery.
+   The repository does not track an install script. The first file, `sql/database/wheeck.sql`, runs `DROP DATABASE IF EXISTS wheeck`, so running the install again deletes every recorded delivery.
 
 3. Create the real config files from the committed templates. The application reads only the gitignored `*.local.json` copies:
 
@@ -80,10 +80,10 @@ This guide takes a fresh clone of wheeck to a first recorded batch of DDTs. whee
 
    ```bash
    cd src
-   python -c "from core import Querier; print(Querier('../config/querier.local.json').run('SELECT COUNT(*) FROM wheeck.delivery').fetch(Querier.FETCH_VAL))"
+   python -c "from core import Querier; print(Querier('../config/querier.local.json').run('SELECT COUNT(*) FROM public.delivery').fetch(Querier.FETCH_VAL))"
    ```
 
-   On a new install it prints `0`. That confirms the ODBC driver, the `wheeck` role password, the schema and the grants.
+   On a new install it prints `0`. That confirms the ODBC driver, the `wheeck` role password, the database and the grants.
 
 3. Optional: run the batch with an empty `DDTs/` folder, still from `src/`:
 
@@ -107,8 +107,8 @@ This guide takes a fresh clone of wheeck to a first recorded batch of DDTs. whee
    - `log/YYYY_MM_DD.log` contains a `JOB END: worked N pages in <file> [M discarded pages]` line for the document.
    - The PDF has moved to `DDTs/recorded/<name>.recorded.pdf`.
    - `res/YYYY_MM.xlsx` (monthly overview) and `res/YYYY_TRIPS.xlsx` (yearly trip summary) exist for the delivery dates of the document.
-   - `scheme/wheeck.dump` holds the schema backup.
-   - Pages that could not be read are in `DDTs/discarded/` as `<name>_PNNN.pdf`. Their warnings are listed in the view `wheeck.vw_discard_message`.
+   - `scheme/wheeck.dump` holds the database backup.
+   - Pages that could not be read are in `DDTs/discarded/` as `<name>_PNNN.pdf`. Their warnings are listed in the view `public.vw_discard_message`.
 
 The [README](../README.md#recovering-a-discarded-page) explains how to recover a discarded page.
 
@@ -138,10 +138,10 @@ The document was committed, but a file step after the commit failed. Two causes:
 
 Fix the folder, then move the file into `DDTs/recorded/` as `<name>.recorded.pdf`. Do not rename it back to its original name: its pages are already recorded, so a new run would only discard them as duplicates.
 
-The run stopped at that document. The PDFs after it stay in `DDTs/` and are processed by the next run. The workbooks and the schema backup were skipped: rebuild the workbooks by hand as shown in the next issue.
+The run stopped at that document. The PDFs after it stay in `DDTs/` and are processed by the next run. The workbooks and the database backup were skipped: rebuild the workbooks by hand as shown in the next issue.
 
 **The run ends with `unhandled exception` while building the workbooks.**
-This happens after the documents are committed and moved, and it skips the schema backup. Common causes:
+This happens after the documents are committed and moved, and it skips the database backup. Common causes:
 - A missing Excel template in `scheme/` (installation step 5).
 - A `members` list with a shape that the yearly summary query cannot use. It needs exactly two entries with a `vehicle`, plus at least one entry with a `null` vehicle and a driver name. See [CONFIGURATION.md](CONFIGURATION.md).
 
@@ -158,7 +158,7 @@ python -c "from wheeck import generate_overview, generate_summary; generate_over
 OpenRouteService rejected the geocoding call, for example because of a wrong key. Check `ors_api_key` in `config/wheeck.local.json`.
 
 **Running the install a second time.**
-The install drops the `wheeck` schema and all its data. `CREATE USER` has no `IF NOT EXISTS`, so psql reports that the role already exists and continues. The role keeps its old password.
+The install drops the `wheeck` database and all its data. `CREATE USER` has no `IF NOT EXISTS`, so psql reports that the role already exists and continues. The role keeps its old password.
 
 ## Next steps
 

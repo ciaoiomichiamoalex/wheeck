@@ -6,7 +6,7 @@
 
 ## System Overview
 
-wheeck is a single-process batch ETL application that records deliveries from Italian transport documents (DDT, *documento di trasporto*). Its inputs are the DDT PDFs queued in `DDTs/` and the JSON configuration in `config/*.local.json`. Each run extracts the text of every page with `pypdfium2` and parses it with regular expressions. It resolves driving distances through OpenRouteService and writes the deliveries, discards and warnings to the PostgreSQL schema `wheeck` with one transaction per document. Its outputs are the database rows, single-page discard PDFs in `DDTs/discarded/`, monthly and yearly Excel workbooks in `res/`, and a `pg_dump` backup in `scheme/`. The code is layered: a thin entry script, the procedural application package `wheeck`, and two small infrastructure packages, `core` (database and logging) and `geo` (OpenRouteService).
+wheeck is a single-process batch ETL application that records deliveries from Italian transport documents (DDT, *documento di trasporto*). Its inputs are the DDT PDFs queued in `DDTs/` and the JSON configuration in `config/*.local.json`. Each run extracts the text of every page with `pypdfium2` and parses it with regular expressions. It resolves driving distances through OpenRouteService and writes the deliveries, discards and warnings to the PostgreSQL database `wheeck` (schema `public`) with one transaction per document. Its outputs are the database rows, single-page discard PDFs in `DDTs/discarded/`, monthly and yearly Excel workbooks in `res/`, and a `pg_dump` backup in `scheme/`. The code is layered: a thin entry script, the procedural application package `wheeck`, and two small infrastructure packages, `core` (database and logging) and `geo` (OpenRouteService).
 
 ## Component Diagram
 
@@ -36,7 +36,7 @@ wheeck is a single-process batch ETL application that records deliveries from It
            │                                    │
            ▼                                    ▼
 ┌────────────────────────┐  ┌──────────────────────────────────────────────┐
-│ OpenRouteService API   │  │ PostgreSQL schema `wheeck` (via ODBC)        │
+│ OpenRouteService API   │  │ PostgreSQL database `wheeck` (via ODBC)      │
 │ (geocode + directions) │  │ `sql/` scripts: tables, views, trigger       │
 └────────────────────────┘  └──────────────────────────────────────────────┘
 
@@ -51,16 +51,16 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 | Entry script | Creates the `main` logger, calls `wheeck.run()`, logs any unhandled exception | `src/main.py` |
 | Batch orchestrator `run()` | Walks `DDTs/`, renames each matching PDF to `.recording.pdf`, scans it, archives or requeues it, then runs gap check, Excel refresh and DB backup | `src/wheeck/recording_docs.py:593` |
 | Document scanner `doc_scanner()` | Extracts page text, resolves distances, opens one DB transaction per document, parses every page with regexes, inserts deliveries/discards/warnings, commits or rolls back | `src/wheeck/recording_docs.py:159` |
-| Distance resolver `resolve_distances()` | Collects distinct delivery cities, reuses distances already stored in `wheeck.delivery`, otherwise calls OpenRouteService with a 1.5 s throttle | `src/wheeck/recording_docs.py:119` |
+| Distance resolver `resolve_distances()` | Collects distinct delivery cities, reuses distances already stored in `public.delivery`, otherwise calls OpenRouteService with a 1.5 s throttle | `src/wheeck/recording_docs.py:119` |
 | Domain model `Delivery` | Dataclass holding the fields extracted from one PDF page; field order matches the INSERT column order | `src/wheeck/recording_docs.py:30` |
-| Warning messages `MessageGenre` | Enum of message templates (`DISCARD`, `GAP`, `WARNING`) written to `wheeck.delivery_warning` | `src/wheeck/recording_docs.py:81` |
+| Warning messages `MessageGenre` | Enum of message templates (`DISCARD`, `GAP`, `WARNING`) written to `public.delivery_warning` | `src/wheeck/recording_docs.py:81` |
 | Helpers | `discard_doc`, `discarded_doc_path`, `check_duplicate`, `check_gaps`, `check_similarity`, `save_warning`, `city_distance` | `src/wheeck/recording_docs.py:103-590` |
 | Excel reporting | Monthly overview (`res/YYYY_MM.xlsx`) and yearly trip summary (`res/YYYY_TRIPS.xlsx`) filled from SQL into templates in `scheme/` | `src/wheeck/overview_docs.py` |
 | Constants | Project paths, config paths, filename and text regexes, `pg_dump` command, Excel number formats, every SQL statement | `src/wheeck/constants.py` |
 | DB access | `Querier` (pyodbc, chained `run().fetch()`, commit/rollback, Excel export) and `LowQuerier` (sqlite3 variant) | `src/core/querier.py` |
 | Common utilities | `decode_json` (JSON file filter), `get_logger` (daily file + console logger) | `src/core/common.py` |
 | Geo wrapper | `GeoMap.search`, `get_distance`, `get_distance_from_coords` over the `openrouteservice` client | `src/geo/geo.py` |
-| Database schema | Tables, views, trigger function, role | `sql/` |
+| Database DDL | Database, tables, views, trigger function, role | `sql/` |
 
 ## Pattern Overview
 
@@ -96,7 +96,7 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 - Depends on: `pyodbc`, `sqlite3`, `openpyxl`, `openrouteservice`. `core` has no project imports. `geo` imports `wheeck.PATH_LOG` (see Architectural Constraints).
 - Used by: `wheeck`.
 
-**Persistence layer (PostgreSQL schema `wheeck`):**
+**Persistence layer (PostgreSQL database `wheeck`, schema `public`):**
 - Purpose: Store deliveries, discards, warnings and historical deliveries; derive gaps and parsed messages through views.
 - Location: `sql/` (installed by hand with the psql `\ir` meta-command, see the README)
 - Contains: tables `delivery`, `delivery_history`, `delivery_warning`, `delivery_discard`; views `vw_discard_message`, `vw_gap_message`, `vw_delivery_gap`; function `sync_discard_status` and trigger `trg_sync_discard_status`; role script `sql/roles/wheeck.sql`.
@@ -115,7 +115,7 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 6. A `Querier` with auto-commit off opens the document transaction (`src/wheeck/recording_docs.py:190`).
 7. For every page: regexes `PATTERN_DOC_NUMBER`, `PATTERN_CITY_DX`/`PATTERN_CITY_SX`, `PATTERN_QUANTITY`, `PATTERN_VEHICLE` fill a `Delivery` (`src/wheeck/recording_docs.py:215-316`). Vehicle and driver are normalised against `members` in `config/wheeck.local.json` with `check_similarity()` (`SequenceMatcher`, >0.5 ratio). Unknown values write a `WARNING` message.
 8. `check_duplicate()` runs `QUERY_CHECK_DUPLICATE`; the distance comes from the pre-resolved map (`src/wheeck/recording_docs.py:342-354`).
-9. A clean page inserts into `wheeck.delivery` (`src/wheeck/recording_docs.py:359`). A page that fails a regex writes a `DISCARD` message plus a `wheeck.delivery_discard` row, and extracts the page to `DDTs/discarded/X_Pnnn.pdf` (`src/wheeck/recording_docs.py:368-405`). A duplicate page (`CHECK_DUPLICATE`, `id_warning_message = -1`) gets only the discard PDF, with no warning and no `delivery_discard` row (`src/wheeck/recording_docs.py:342-346`).
+9. A clean page inserts into `public.delivery` (`src/wheeck/recording_docs.py:359`). A page that fails a regex writes a `DISCARD` message plus a `public.delivery_discard` row, and extracts the page to `DDTs/discarded/X_Pnnn.pdf` (`src/wheeck/recording_docs.py:368-405`). A duplicate page (`CHECK_DUPLICATE`, `id_warning_message = -1`) gets only the discard PDF, with no warning and no `delivery_discard` row (`src/wheeck/recording_docs.py:342-346`).
 10. Open gap warnings matching the page's document number are closed with `QUERY_UPDATE_WARNING` (`src/wheeck/recording_docs.py:409-416`).
 11. Commit is the last statement of the `try` (`src/wheeck/recording_docs.py:420`). Any exception rolls back, deletes the discard PDFs created by this run, and re-raises (`src/wheeck/recording_docs.py:423-435`).
 12. On success `run()` copies the file to `backup_dir` (if configured) and moves it to `DDTs/recorded/X.recorded.pdf` (`src/wheeck/recording_docs.py:634-639`). On failure it restores `X.pdf`, or renames to `X.failed.pdf` if the restore fails (`src/wheeck/recording_docs.py:617-630`).
@@ -125,9 +125,9 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 
 1. `run()` scans only `DDTs/`, not `DDTs/discarded/`. A discarded single-page PDF `X_Pnnn.pdf` is processed again only when it is placed back in `DDTs/`.
 2. `PATTERN_WORKING_DOC` accepts the `_Pnnn` suffix; `PATTERN_DISCARD_DOC` recognises it as a discard document (`src/wheeck/recording_docs.py:319`).
-3. If the page still fails parsing, `QUERY_GET_DISCARD` loads the open (`status IS TRUE`) discard row. The row is used only if none of its selected columns is NULL, so the missing values must be filled in `wheeck.delivery_discard` first. `Delivery.charge()` then copies the values and the page is treated as clean (`src/wheeck/recording_docs.py:328-339`). With NULLs left, the page stays discarded and keeps its existing warning id.
+3. If the page still fails parsing, `QUERY_GET_DISCARD` loads the open (`status IS TRUE`) discard row. The row is used only if none of its selected columns is NULL, so the missing values must be filled in `public.delivery_discard` first. `Delivery.charge()` then copies the values and the page is treated as clean (`src/wheeck/recording_docs.py:328-339`). With NULLs left, the page stays discarded and keeps its existing warning id.
 4. The delivery is inserted and `QUERY_UPDATE_WARNING` sets the `DISCARD` warning `status = FALSE` (`src/wheeck/recording_docs.py:363`).
-5. Trigger `trg_sync_discard_status` (`sql/triggers/trg_sync_discard_status.sql`) runs `wheeck.sync_discard_status()` (`sql/functions/sync_discard_status.sql`), which copies the status to `delivery_discard`.
+5. Trigger `trg_sync_discard_status` (`sql/triggers/trg_sync_discard_status.sql`) runs `public.sync_discard_status()` (`sql/functions/sync_discard_status.sql`), which copies the status to `delivery_discard`.
 6. Discard documents are never copied to `backup_dir` (`src/wheeck/recording_docs.py:634`).
 
 ### Gap Detection Flow
@@ -143,7 +143,7 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 3. `generate_summary(year)` always starts from `scheme/summary.xlsx`. It fills sheet `viaggi` with the longest trip per day for each vehicle, side by side. `QUERY_GET_SUMMARY` takes exactly two vehicle parameters, so `members` must list exactly two vehicles. Deliveries by members listed without a vehicle are excluded (`src/wheeck/overview_docs.py:62-95`).
 
 **State Management:**
-- Persistent state lives in PostgreSQL (`wheeck` schema) and in the filenames and folders under `DDTs/`.
+- Persistent state lives in PostgreSQL (`wheeck` database) and in the filenames and folders under `DDTs/`.
 - In-process state: the `Delivery` instance per page, an anonymous `DiscardedPages` counter object per document (`src/wheeck/recording_docs.py:194-202`), and the `discarded_docs` list used for rollback cleanup.
 - Config is re-read from disk with `decode_json(PATH_CFG_PRJ)` on every use (per page in the vehicle check, per city in `city_distance`). Only the DB config is cached (`Querier._cache_config`).
 
@@ -190,7 +190,7 @@ wheeck/
 │   ├── wheeck/        # Application package: recording pipeline, Excel reports, constants and SQL
 │   ├── core/          # Infrastructure: Querier (pyodbc), LowQuerier (sqlite3), decode_json, get_logger
 │   └── geo/           # Infrastructure: GeoMap over the openrouteservice client
-├── sql/               # PostgreSQL schema scripts, one file per object, run in order with psql \ir
+├── sql/               # PostgreSQL DDL scripts, one file per object, run in order with psql \ir
 ├── config/            # Committed JSON templates; the real *.local.json copies are gitignored
 ├── scheme/            # Excel templates (overview.xlsx, summary.xlsx) and pg_dump backups
 ├── DDTs/              # Input queue, with discarded/ and recorded/ subfolders
@@ -218,7 +218,7 @@ wheeck/
 **Database install:**
 - Location: the `\ir` sequence in the README (Installation, step 2). The repository tracks no install script.
 - Triggers: run by hand at a `psql` prompt started from the repository root.
-- Responsibilities: Drops and recreates schema `wheeck` (`sql/schema/wheeck.sql` uses `DROP SCHEMA IF EXISTS wheeck CASCADE`), then creates tables, function, trigger, role and views in dependency order.
+- Responsibilities: Drops and recreates database `wheeck` (`sql/database/wheeck.sql` uses `DROP DATABASE IF EXISTS wheeck`). After `\c wheeck`, it creates tables, function, trigger, role and views in schema `public`, in dependency order.
 
 ## Architectural Constraints
 
@@ -233,9 +233,9 @@ wheeck/
 - **Circular imports:** `wheeck/__init__.py` -> `recording_docs` -> `geo` -> `geo/geo.py` -> `from wheeck import PATH_LOG`. It works only because `src/wheeck/__init__.py:1` binds the constants before importing `recording_docs`. Running `import geo` before `import wheeck` fails with `ImportError: cannot import name 'GeoMap' from 'geo'`. Always import `wheeck` first, and keep the constants import on line 1 of `src/wheeck/__init__.py`.
 - **Import root:** Packages are imported as top-level names (`from core import ...`), so `src/` must be on `sys.path`. Running `src/main.py` as a script does this. Interactive imports need `src/` as the working directory or on `PYTHONPATH`. There is no `pyproject.toml` or installable package. Project paths are computed from `src/wheeck/constants.py` (`Path(__file__).resolve().parents[2]`), so data folders resolve independently of the working directory.
 - **Configuration files:** The real configs are `config/wheeck.local.json` and `config/querier.local.json` (gitignored). The committed `config/wheeck.json` and `config/querier.json` are templates with null values. The code reads only the `.local.json` files (`src/wheeck/constants.py:11-12`).
-- **Backup command is separate from DB config:** `CMD_BACKUP_DB` (`src/wheeck/constants.py:27`) hardcodes `pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres` with `-w` (never prompt for a password). It needs non-interactive auth for `postgres` (`.pgpass`, `PGPASSWORD` or trust auth) and does not read `config/querier.local.json`.
+- **Backup command is separate from DB config:** `CMD_BACKUP_DB` (`src/wheeck/constants.py:27`) hardcodes `pg_dump -U postgres -h 127.0.0.1 -p 5432 -d wheeck` with `-w` (never prompt for a password). It needs non-interactive auth for `postgres` (`.pgpass`, `PGPASSWORD` or trust auth) and does not read `config/querier.local.json`.
 - **Report assumptions:** `QUERY_GET_SUMMARY` takes exactly two vehicle parameters, and its `vehicle_driver NOT IN (%s)` list is built from `members` entries without a vehicle. `members` must list exactly two vehicles and at least one driver-only entry, or `generate_summary` sends invalid SQL (`NOT IN ()`) or the wrong number of parameters.
-- **Unused code paths:** Nothing in `src/wheeck/` uses `LowQuerier` or `Querier.save_excel` (`src/core/querier.py`). No Python code writes `wheeck.delivery_history`; only `sql/views/vw_delivery_gap.sql` reads it.
+- **Unused code paths:** Nothing in `src/wheeck/` uses `LowQuerier` or `Querier.save_excel` (`src/core/querier.py`). No Python code writes `public.delivery_history`; only `sql/views/vw_delivery_gap.sql` reads it.
 
 ## Anti-Patterns
 

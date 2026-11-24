@@ -194,7 +194,7 @@ Rows returned by pyodbc support attribute access (`row.year`, `discard.id_warnin
 - After a SELECT, `.rows` is `-1`.
 - `save_changes()` raises `AttributeError: 'sqlite3.Cursor' object has no attribute 'commit'`.
 - `fetch` returns `dict`s, not attribute rows.
-- Every `QUERY_*` in `src/wheeck/constants.py` is PostgreSQL-specific: the `wheeck.` schema, `RETURNING`, `::INT`, `INTERVAL '1' DAY`.
+- Every `QUERY_*` in `src/wheeck/constants.py` is PostgreSQL-specific: the `public.` schema prefix, `RETURNING`, `::INT`, `INTERVAL '1' DAY`.
 
 Use a fake object or `mock`, not SQLite.
 
@@ -245,7 +245,7 @@ self.assertTrue(re.search(PATTERN_WORKING_DOC, '2026_01_DDT_0001_0100.pdf'))
 - `run`, `src/wheeck/recording_docs.py:593-662`: requeue on failure, the `.failed.pdf` fallback, and backup rotation.
 - `save_warning`: the shared vs. own querier behaviour. With its own querier a failed insert returns the `-1` sentinel; with a shared one it raises `RecordingError`.
 - `check_duplicate`: opens and closes its own `Querier` only when no shared one is passed.
-- `MessageGenre` templates: `DISCARD` must render with `document_number=None`. The views `wheeck.vw_discard_message` and `wheeck.vw_gap_message` parse the rendered `DISCARD` and `GAP` text back, so any wording change breaks them.
+- `MessageGenre` templates: `DISCARD` must render with `document_number=None`. The views `public.vw_discard_message` and `public.vw_gap_message` parse the rendered `DISCARD` and `GAP` text back, so any wording change breaks them.
 
 ## Test Types
 
@@ -259,9 +259,9 @@ self.assertTrue(re.search(PATTERN_WORKING_DOC, '2026_01_DDT_0001_0100.pdf'))
 **Integration Tests:**
 - Not present.
 - Manual path:
-  1. Install the schema into a **disposable** PostgreSQL database with the `\ir` sequence from the README.
+  1. Install the database on a **disposable** PostgreSQL server with the `\ir` sequence from the README.
   2. Point a `main` entry in `config/querier.local.json` at that database.
-- Warning: `sql/schema/wheeck.sql` runs `DROP SCHEMA IF EXISTS wheeck CASCADE`. Never run the install against a database whose data you need.
+- Warning: `sql/database/wheeck.sql` runs `DROP DATABASE IF EXISTS wheeck`. Never run the install on a server whose `wheeck` database holds data you need.
 - `sql/roles/wheeck.sql` runs `CREATE USER wheeck`. Roles are cluster-wide, so on a cluster that already has the role this statement fails.
 - `Querier` also accepts `conn_str=` (a dict) and `conn_name=`. The `wheeck` functions never pass these and always use `Querier(cfg_in=PATH_CFG_DB)`; `save_warning` (`src/wheeck/recording_docs.py`) also passes `save_changes=True`.
 
@@ -270,12 +270,12 @@ self.assertTrue(re.search(PATTERN_WORKING_DOC, '2026_01_DDT_0001_0100.pdf'))
   1. Put a correctly named PDF in `DDTs/`.
   2. Run `.venv/Scripts/python.exe src/main.py`.
   3. Inspect `log/<today>.log` for the `JOB START:` / `JOB END:` / `JOB FAILED:` markers.
-  4. Check `DDTs/recorded/` (`*.recorded.pdf`), `DDTs/discarded/` (`*_PNNN.pdf`) and the `wheeck.delivery`, `wheeck.delivery_discard` and `wheeck.delivery_warning` tables.
+  4. Check `DDTs/recorded/` (`*.recorded.pdf`), `DDTs/discarded/` (`*_PNNN.pdf`) and the `public.delivery`, `public.delivery_discard` and `public.delivery_warning` tables.
 - Caveat: a disposable database does not isolate the run. When `run()` picks up at least one correctly named PDF, even one that is rolled back, it then does three more steps:
   - Runs `check_gaps`.
   - Runs `generate_current`, which rewrites the Excel files in `res/` (a symlink outside the repo) for every month with deliveries recorded in the last day.
   - Runs `pg_dump` into `scheme/`.
-- `CMD_BACKUP_DB` (`src/wheeck/constants.py`) is fixed to database `postgres` on `127.0.0.1:5432` as user `postgres`. It ignores `config/querier.local.json`. The size-based rotation can then replace `scheme/wheeck.dump`. Back up `res/` and `scheme/wheeck.dump` before a manual run.
+- `CMD_BACKUP_DB` (`src/wheeck/constants.py`) is fixed to database `wheeck` on `127.0.0.1:5432` as user `postgres`. It ignores `config/querier.local.json`. The size-based rotation can then replace `scheme/wheeck.dump`. Back up `res/` and `scheme/wheeck.dump` before a manual run.
 
 ## Common Patterns
 

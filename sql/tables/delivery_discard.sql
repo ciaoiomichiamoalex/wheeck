@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS wheeck.delivery_discard (
+CREATE TABLE IF NOT EXISTS public.delivery_discard (
     id INTEGER GENERATED ALWAYS AS IDENTITY,
     id_warning_message INTEGER NOT NULL,
     document_number INTEGER,
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS wheeck.delivery_discard (
         PRIMARY KEY (id),
     CONSTRAINT fk_delivery_warning_id
         FOREIGN KEY (id_warning_message)
-        REFERENCES wheeck.delivery_warning (id)
+        REFERENCES public.delivery_warning (id)
         ON DELETE RESTRICT,
     CONSTRAINT uq_delivery_discard_document_source_page
         UNIQUE (document_source, page_number),
@@ -33,11 +33,11 @@ CREATE TABLE IF NOT EXISTS wheeck.delivery_discard (
 ;
 
 CREATE INDEX idx_delivery_discard_document_number_genre_year
-    ON wheeck.delivery_discard (document_number, document_genre, document_date)
+    ON public.delivery_discard (document_number, document_genre, document_date)
 ;
 CREATE INDEX idx_delivery_discard_company_name
-    ON wheeck.delivery_discard (company_name)
+    ON public.delivery_discard (company_name)
 ;
 CREATE INDEX idx_delivery_discard_delivery_city
-    ON wheeck.delivery_discard (delivery_city)
+    ON public.delivery_discard (delivery_city)
 ;

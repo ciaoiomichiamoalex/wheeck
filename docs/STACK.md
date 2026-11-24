@@ -9,8 +9,8 @@
 - Python 3.12+ (developed on 3.15.1): all application code under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src/wheeck/`)
 
 **Secondary:**
-- SQL (PostgreSQL dialect, including PL/pgSQL): the database schema under `sql/`
-  - DDL scripts: `sql/schema/wheeck.sql`, `sql/tables/*.sql`, `sql/views/*.sql`
+- SQL (PostgreSQL dialect, including PL/pgSQL): the database objects under `sql/`
+  - DDL scripts: `sql/database/wheeck.sql`, `sql/tables/*.sql`, `sql/views/*.sql`
   - PL/pgSQL trigger function: `sql/functions/sync_discard_status.sql`
   - Trigger: `sql/triggers/trg_sync_discard_status.sql`
   - Role and grants: `sql/roles/wheeck.sql`
@@ -101,7 +101,7 @@ Direct dependencies, from `requirements.txt`:
 - Hardcoded settings in `src/wheeck/constants.py`:
   - All project paths (`PATH_*`) derive from `Path(__file__).resolve().parents[2]`.
   - Regex patterns for file names and DDT fields (`PATTERN_*`).
-  - The `pg_dump` backup command (`CMD_BACKUP_DB`), with fixed host `127.0.0.1`, port `5432`, user `postgres` and database `postgres`.
+  - The `pg_dump` backup command (`CMD_BACKUP_DB`), with fixed host `127.0.0.1`, port `5432`, user `postgres` and database `wheeck`.
   - Excel number formats and the font (`OVERVIEW_*`).
 
 **Build:**
@@ -114,8 +114,8 @@ Direct dependencies, from `requirements.txt`:
 **Development:**
 - Python 3.12 or later, with a virtualenv: `python -m venv .venv`, then `.venv\Scripts\pip install -r requirements.txt`.
 - psqlODBC installed, registered under the driver name given in `config/querier.local.json`. The template uses `PostgreSQL ANSI`.
-- A PostgreSQL server reachable at the configured `server`/`port`. The template uses `127.0.0.1:5432`, database `postgres`.
-- The schema must be installed once as a superuser, with the `\ir` sequence in the README. `sql/schema/wheeck.sql` runs `DROP SCHEMA IF EXISTS wheeck CASCADE`, so re-running the install wipes all data.
+- A PostgreSQL server reachable at the configured `server`/`port`. The template uses `127.0.0.1:5432`, database `wheeck`.
+- The database must be installed once as a superuser, with the `\ir` sequence in the README. `sql/database/wheeck.sql` runs `DROP DATABASE IF EXISTS wheeck`, so re-running the install wipes all data.
 - PostgreSQL client tools on `PATH`:
   - `psql`, for the install.
   - `pg_dump`, for the automatic backup at the end of each run. It runs once any file name in `DDTs/` matches `PATTERN_WORKING_DOC`, even if that document rolled back.

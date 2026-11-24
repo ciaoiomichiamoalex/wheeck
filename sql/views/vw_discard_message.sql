@@ -1,5 +1,5 @@
-DROP VIEW IF EXISTS wheeck.vw_discard_message;
-CREATE OR REPLACE VIEW wheeck.vw_discard_message AS
+DROP VIEW IF EXISTS public.vw_discard_message;
+CREATE OR REPLACE VIEW public.vw_discard_message AS
 SELECT id,
     NULLIF(SUBSTRING(
         message_text,
@@ -31,7 +31,7 @@ SELECT id,
         STRPOS(message_text, 'Page ') + LENGTH('Page '),
         STRPOS(message_text, ' of doc ') - (STRPOS(message_text, 'Page ') + LENGTH('Page '))
     )::INTEGER AS page_number
-FROM wheeck.delivery_warning
+FROM public.delivery_warning
 WHERE message_genre = 'DISCARD'
     AND status IS TRUE
 ;

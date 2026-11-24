@@ -84,7 +84,7 @@ class MessageGenre(Enum):
     """
     # DISCARD needs '%(document_number)s' and not '%(document_number)d': on a PATTERN_DOC_NUMBER failure the
     # document number stays None and a '%d' specifier raises TypeError before any INSERT runs, turning the
-    # regular discard path into a rollback trigger (es. 'number: None'). The view wheeck.vw_discard_message
+    # regular discard path into a rollback trigger (es. 'number: None'). The view public.vw_discard_message
     # already parses that string form back with NULLIF(..., 'None'). The other specifiers are safe as they
     # are: '%(page)d' is always the working_page int, while '%(doc)s', '%(pattern)s', '%(document_genre)s'
     # and '%(document_date)s' render None harmlessly. GAP is fed by vw_delivery_gap rows, never None.

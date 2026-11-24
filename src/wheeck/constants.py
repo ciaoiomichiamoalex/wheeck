@@ -24,7 +24,7 @@ PATTERN_CITY_SX = r"Luogo di partenza: .+\r\n([\w\t \.\&\-'\/,]+)\r\n(?:\d{5}) (
 PATTERN_QUANTITY = r'(?:Quantità Prezzo\r\n.+)? (?:L|KG) ([\d\.]+),000\s'
 PATTERN_VEHICLE = r'Peso soggetto accisa\r\n([\w\d]{7})\r\n([\w ]+)?\r?\n?Targa automezzo'
 
-CMD_BACKUP_DB = f'pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres -n wheeck -w -c -F c -f \"{PATH_SCHEME}/wheeck.bak.dump\"'
+CMD_BACKUP_DB = f'pg_dump -U postgres -h 127.0.0.1 -p 5432 -d wheeck -w -c -F c -f \"{PATH_SCHEME}/wheeck.bak.dump\"'
 
 OVERVIEW_DEFAULT_FONT = 'Arial'
 OVERVIEW_FORMATS = {
@@ -35,7 +35,7 @@ OVERVIEW_FORMATS = {
 }
 
 QUERY_INSERT_DELIVERY = """\
-    INSERT INTO wheeck.delivery (
+    INSERT INTO public.delivery (
         document_number,
         document_genre,
         document_date,
@@ -55,7 +55,7 @@ QUERY_INSERT_DELIVERY = """\
 
 QUERY_CHECK_DUPLICATE = """\
     SELECT COUNT(*) AS nr_record
-    FROM wheeck.delivery
+    FROM public.delivery
     WHERE (
         document_source = ?
         AND page_number = ?
@@ -69,7 +69,7 @@ QUERY_CHECK_DUPLICATE = """\
 
 QUERY_CHECK_DISCARD = """\
     SELECT COUNT(*) AS nr_record
-    FROM wheeck.delivery_discard
+    FROM public.delivery_discard
     WHERE document_source = ?
         AND page_number = ?
     ;
@@ -77,7 +77,7 @@ QUERY_CHECK_DISCARD = """\
 
 QUERY_GET_DISTANCE = """\
     SELECT DISTINCT distance
-    FROM wheeck.delivery
+    FROM public.delivery
     WHERE delivery_city = ?
     ;
 """
@@ -94,14 +94,14 @@ QUERY_GET_DISCARD = """\
         vehicle_driver,
         distance,
         id_warning_message
-    FROM wheeck.delivery_discard
+    FROM public.delivery_discard
     WHERE status IS TRUE
         AND document_source = ?
         AND page_number = ?
     ;
 """
 QUERY_INSERT_DISCARD = """\
-    INSERT INTO wheeck.delivery_discard (
+    INSERT INTO public.delivery_discard (
         document_number,
         document_genre,
         document_date,
@@ -121,7 +121,7 @@ QUERY_INSERT_DISCARD = """\
 """
 
 QUERY_INSERT_WARNING = """\
-    INSERT INTO wheeck.delivery_warning (
+    INSERT INTO public.delivery_warning (
         message_genre,
         message_text
     ) VALUES (?, ?)
@@ -129,7 +129,7 @@ QUERY_INSERT_WARNING = """\
     ;
 """
 QUERY_UPDATE_WARNING = """\
-    UPDATE wheeck.delivery_warning
+    UPDATE public.delivery_warning
     SET status = FALSE
     WHERE id = ?
     ;
@@ -138,8 +138,8 @@ QUERY_UPDATE_WARNING = """\
 QUERY_CHECK_GAPS = """\
     SELECT dg.document_number,
         dg.document_year
-    FROM wheeck.vw_delivery_gap dg
-        LEFT JOIN wheeck.vw_gap_message gm
+    FROM public.vw_delivery_gap dg
+        LEFT JOIN public.vw_gap_message gm
             ON dg.document_number = gm.document_number
             AND dg.document_year = gm.document_year
     WHERE dg.is_discard IS FALSE
@@ -149,7 +149,7 @@ QUERY_CHECK_GAPS = """\
 """
 QUERY_GET_GAP = """\
     SELECT id
-    FROM wheeck.vw_gap_message
+    FROM public.vw_gap_message
     WHERE document_number = ?
         AND document_year = ?
     ;
@@ -163,7 +163,7 @@ QUERY_GET_OVERVIEW = """\
         quantity,
         delivery_date,
         vehicle
-    FROM wheeck.delivery
+    FROM public.delivery
     WHERE EXTRACT(YEAR FROM delivery_date) = ?
         AND EXTRACT(MONTH FROM delivery_date) = ?
     ORDER BY document_number
@@ -180,7 +180,7 @@ QUERY_GET_SUMMARY = """\
                 PARTITION BY delivery_date, vehicle 
                 ORDER BY distance DESC
             ) AS rnk
-        FROM wheeck.delivery
+        FROM public.delivery
         WHERE EXTRACT(YEAR FROM delivery_date) = ?
             AND vehicle_driver NOT IN (%s)
     ), summary0 AS (
@@ -225,7 +225,7 @@ QUERY_GET_SUMMARY = """\
 QUERY_GET_LAST_OVERVIEWS = """\
     SELECT DISTINCT EXTRACT(YEAR FROM delivery_date)::INT AS year,
         EXTRACT(MONTH FROM delivery_date)::INT AS month
-    FROM wheeck.delivery 
+    FROM public.delivery 
     WHERE recording_date >= NOW() - INTERVAL '1' DAY
         AND recording_date < NOW()
     ORDER BY 1, 2

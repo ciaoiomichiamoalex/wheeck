@@ -32,12 +32,12 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 - Fix approach: Extract a pure `extract_delivery(text, members) -> (Delivery, list[str])` with no I/O. Keep `doc_scanner` as the transactional shell. Replace the anonymous class with a plain list of error names.
 
 **Positional coupling between `Delivery` and SQL:**
-- Issue: `QUERY_INSERT_DELIVERY` receives `astuple(delivery)[:-1]` (`recording_docs.py:359`), and `QUERY_INSERT_DISCARD` receives the full `astuple(delivery)` (`recording_docs.py:391`). This only works while the `Delivery` field order (`recording_docs.py:34-47`) matches the column lists in `src/wheeck/constants.py:37-54, 103-121`. `vw_delivery_gap` unions `SELECT * FROM wheeck.delivery` with `SELECT * FROM wheeck.delivery_history` (`sql/views/vw_delivery_gap.sql:3-6`).
+- Issue: `QUERY_INSERT_DELIVERY` receives `astuple(delivery)[:-1]` (`recording_docs.py:359`), and `QUERY_INSERT_DISCARD` receives the full `astuple(delivery)` (`recording_docs.py:391`). This only works while the `Delivery` field order (`recording_docs.py:34-47`) matches the column lists in `src/wheeck/constants.py:37-54, 103-121`. `vw_delivery_gap` unions `SELECT * FROM public.delivery` with `SELECT * FROM public.delivery_history` (`sql/views/vw_delivery_gap.sql:3-6`).
 - Impact: Reordering or adding a `Delivery` field, or letting the two table definitions drift apart, silently shifts values into the wrong columns.
 - Fix approach: Pass explicit field tuples, or name the columns in the view's `UNION ALL`.
 
 **`delivery_history` is ignored by the duplicate and distance checks:**
-- Issue: `delivery_history` (`sql/tables/delivery_history.sql`) is filled manually, and only `vw_delivery_gap` reads it. `QUERY_CHECK_DUPLICATE` and `QUERY_GET_DISTANCE` (`src/wheeck/constants.py:56-83`) query only `wheeck.delivery`.
+- Issue: `delivery_history` (`sql/tables/delivery_history.sql`) is filled manually, and only `vw_delivery_gap` reads it. `QUERY_CHECK_DUPLICATE` and `QUERY_GET_DISTANCE` (`src/wheeck/constants.py:56-83`) query only `public.delivery`.
 - Impact: After rows are archived, a re-dropped archived DDT is inserted into `delivery` again, and the cities of archived rows are geocoded again.
 - Fix approach: Add `UNION ALL` over `delivery_history` to both queries, or document that archived DDTs must never be re-dropped.
 
@@ -47,15 +47,15 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 - Fix approach: Load and validate `config/wheeck.local.json` once at the start of `run()`: check that `members` has at least one vehicle and at least one driver, and that `departure_coords` has two numbers. Pass the result down.
 
 **Backup command is hardcoded:**
-- Issue: `CMD_BACKUP_DB` (`src/wheeck/constants.py:27`) hardcodes the user `postgres`, host `127.0.0.1`, port `5432` and database `postgres`. It ignores `config/querier.local.json`.
+- Issue: `CMD_BACKUP_DB` (`src/wheeck/constants.py:27`) hardcodes the user `postgres`, host `127.0.0.1`, port `5432` and database `wheeck`. It ignores `config/querier.local.json`.
 - Impact: A change of database host or port moves the application but not the backup, and nothing reports the mismatch.
 - Fix approach: Build the `pg_dump` argument list from the querier config and call `subprocess.run([...])` without `shell=True`.
 
 **No schema migrations, and the install is destructive:**
-- Issue: The install sequence starts with `sql/schema/wheeck.sql`, whose first line is `DROP SCHEMA IF EXISTS wheeck CASCADE;`. The `CREATE TABLE IF NOT EXISTS` statements suggest idempotence, but the schema is always dropped first. `CREATE INDEX` statements have no `IF NOT EXISTS`. `CREATE USER wheeck` fails when the role exists, and `psql` continues past errors unless `ON_ERROR_STOP` is set.
-- Files: `sql/schema/wheeck.sql:1`, `sql/roles/wheeck.sql:9`, `sql/tables/*.sql`
+- Issue: The install sequence starts with `sql/database/wheeck.sql`, whose first line is `DROP DATABASE IF EXISTS wheeck;`. The `CREATE TABLE IF NOT EXISTS` statements suggest idempotence, but the database is always dropped first. `CREATE INDEX` statements have no `IF NOT EXISTS`. `CREATE USER wheeck` fails when the role exists, and `psql` continues past errors unless `ON_ERROR_STOP` is set.
+- Files: `sql/database/wheeck.sql:1`, `sql/roles/wheeck.sql:9`, `sql/tables/*.sql`
 - Impact: Running the install against the production database deletes every delivery, warning and history row. The only way to change the schema is a manual `ALTER` or a reinstall followed by a restore from `scheme/wheeck.dump`.
-- Fix approach: Move the `DROP SCHEMA` into a separate, explicitly named reset script. Run `\set ON_ERROR_STOP on` before the `\ir` lines. Keep numbered migration scripts for later changes.
+- Fix approach: Move the `DROP DATABASE` into a separate, explicitly named reset script. Run `\set ON_ERROR_STOP on` before the `\ir` lines. Keep numbered migration scripts for later changes.
 
 **Dead code:**
 - Files: `LowQuerier` (`src/core/querier.py:211-293`, exported from `src/core/__init__.py:2`, never used), `Querier.save_excel` (`src/core/querier.py:174-208`), `Querier.cursor` property (`src/core/querier.py:97-105`), `GeoMap.get_distance` (`src/geo/geo.py:54-76`), `Delivery.calculate_distance` (`src/wheeck/recording_docs.py:63-67`, referenced only in a comment), and the `!= -1` check at `recording_docs.py:391`, which its own comment calls dead code.
@@ -82,7 +82,7 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 - Symptoms: Every later delivery to that city gets `distance = NULL`, and the city is never geocoded again.
 - Files: `src/wheeck/recording_docs.py:144-153`, `src/wheeck/constants.py:78-83`, `src/geo/geo.py:44-52, 95-103`
 - Trigger: `GeoMap.search` or `get_distance_from_coords` returns `None` on an ORS error, on a timeout, or on a 429 or 503 that the client keeps retrying past its 60 s `retry_timeout`. The delivery is then inserted with a NULL distance. On the next run, `SELECT DISTINCT distance ... WHERE delivery_city = ?` returns one row, `NULL`, and `rows == 1` is true, so the NULL is reused. If a city has both a NULL row and a non-NULL row, `rows == 2`, so the city is geocoded again on every document. `log/2025_01_12.log` records one such failure: ORS 404, error code 2010, "Could not find routable point within a radius of 500.0 meters".
-- Workaround: Update `wheeck.delivery.distance` for the city by hand.
+- Workaround: Update `public.delivery.distance` for the city by hand.
 - Fix: Add `AND distance IS NOT NULL` to `QUERY_GET_DISTANCE` and use `rows >= 1`. Consider a larger `radiuses` value at `src/geo/geo.py:93`.
 
 **The trip summary puts NULL-distance deliveries first:**
@@ -103,8 +103,8 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 **A discard can only be promoted if every column is non-NULL, including nullable ones:**
 - Symptoms: The user fixes a `delivery_discard` row and puts its page PDF back into `DDTs/`, but the page is discarded again with "still found NULL cell". A new discard PDF named `..._P001_P001.pdf` is written.
 - Files: `src/wheeck/recording_docs.py:330-339`, `src/wheeck/constants.py:85-102`
-- Trigger: `if None not in discard` requires all 11 selected columns to be non-NULL. In `wheeck.delivery`, `vehicle_driver` and `distance` are nullable (`sql/tables/delivery.sql:11-12`). A discard whose driver could not be resolved, or whose city cannot be geocoded, cannot be promoted until the user also invents those values.
-- Fix: Check only the columns that are `NOT NULL` in `wheeck.delivery`.
+- Trigger: `if None not in discard` requires all 11 selected columns to be non-NULL. In `public.delivery`, `vehicle_driver` and `distance` are nullable (`sql/tables/delivery.sql:11-12`). A discard whose driver could not be resolved, or whose city cannot be geocoded, cannot be promoted until the user also invents those values.
+- Fix: Check only the columns that are `NOT NULL` in `public.delivery`.
 
 **A rescanned discard page that now parses cleanly leaves its discard open:**
 - Symptoms: The delivery is recorded, but the original DISCARD warning and its `delivery_discard` row stay at `status = TRUE`. They keep appearing in `vw_discard_message`.
@@ -124,7 +124,7 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 - Files: `src/wheeck/recording_docs.py:423-435, 616-630`
 - Trigger: A `KeyboardInterrupt` (Ctrl+C), a killed process or a power loss during `doc_scanner`. Both handlers catch `Exception`, which does not include `KeyboardInterrupt`, so neither the rename-back nor the discard cleanup runs. The server rolls back the open transaction when the connection drops.
 - Workaround: Rename `X.recording.pdf` back to `X.pdf` and delete its discard PDFs.
-- Fix: At the start of `run()`, check each leftover `*.recording.pdf` against `wheeck.delivery.document_source`. Rename it back to its original name only when no row exists, and move it to `DDTs/recorded/` when rows exist. A blind rename is not safe: a leftover from the post-commit failure above is already committed. On reprocess every page hits `CHECK_DUPLICATE` (`recording_docs.py:342-346`), and lines 395-402 then write one discard PDF per page with no database row.
+- Fix: At the start of `run()`, check each leftover `*.recording.pdf` against `public.delivery.document_source`. Rename it back to its original name only when no row exists, and move it to `DDTs/recorded/` when rows exist. A blind rename is not safe: a leftover from the post-commit failure above is already committed. On reprocess every page hits `CHECK_DUPLICATE` (`recording_docs.py:342-346`), and lines 395-402 then write one discard PDF per page with no database row.
 
 **The backup is silently replaced only when the new dump is at least as large:**
 - Symptoms: `scheme/wheeck.dump` stops updating without any log entry.
@@ -172,7 +172,7 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 **Backups run with superuser credentials:**
 - Risk: `CMD_BACKUP_DB` (`src/wheeck/constants.py:27`) runs `pg_dump -U postgres -w` through `subprocess.run(..., shell=True)` (`src/wheeck/recording_docs.py:651`). It connects as the `postgres` superuser, and `-w` means it never prompts for a password. Where those credentials come from was not inspected, but the account that runs wheeck can authenticate as the superuser without interaction.
 - Current mitigation: The command is static. The only interpolated value is `PATH_SCHEME`, which is quoted.
-- Recommendations: Create a dedicated read-only backup role with only the privileges needed to dump schema `wheeck`, and call `pg_dump` without `shell=True`.
+- Recommendations: Create a dedicated read-only backup role with only the privileges needed to dump database `wheeck`, and call `pg_dump` without `shell=True`.
 
 **Plaintext secrets on disk:**
 - Risk: `config/querier.local.json` (database credentials) and `config/wheeck.local.json` (`ors_api_key`) exist as plaintext files. Their contents were not inspected.
@@ -271,7 +271,7 @@ Current volumes are small: monthly DDT batches named `YYYY_MM_DDT_<first>_<last>
 - Scaling path: Take an exclusive lock file in `DDTs/` at the start of `run()`.
 
 **OpenRouteService throughput:**
-- Current capacity: At most one new city every 1.5 s or more, per the "40 call/min" comment at `src/wheeck/recording_docs.py:152`. Known cities are served from `wheeck.delivery`.
+- Current capacity: At most one new city every 1.5 s or more, per the "40 call/min" comment at `src/wheeck/recording_docs.py:152`. Known cities are served from `public.delivery`.
 - Limit: A first run over a large backlog of unseen cities is bounded by the throttle and by the client's 60 s retry window per call.
 - Scaling path: Add a dedicated `city_distance` cache table keyed on city and province, so the cache no longer depends on delivery rows.
 
