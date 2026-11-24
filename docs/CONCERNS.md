@@ -20,8 +20,8 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 - Fix approach: Add `close()`, `__enter__` and `__exit__` to `Querier`, use `with Querier(...) as querier:` at every call site, and make `__del__` a guarded fallback.
 
 **Structured data stored as free text and parsed back in SQL:**
-- Issue: `MessageGenre` (`src/wheeck/recording_docs.py:81-93`) formats document number, genre, date, page and source into `delivery_warning.message_text`. The views `db/views/vw_discard_message.sql:4-33` and `db/views/vw_gap_message.sql:4-13` then recover those fields with `STRPOS`/`SUBSTRING` and `::INTEGER`/`::DATE` casts.
-- Files: `src/wheeck/recording_docs.py:81-93`, `db/views/vw_discard_message.sql`, `db/views/vw_gap_message.sql`, `db/views/vw_delivery_gap.sql:37-39`, `src/wheeck/constants.py:138-156`
+- Issue: `MessageGenre` (`src/wheeck/recording_docs.py:81-93`) formats document number, genre, date, page and source into `delivery_warning.message_text`. The views `sql/views/vw_discard_message.sql:4-33` and `sql/views/vw_gap_message.sql:4-13` then recover those fields with `STRPOS`/`SUBSTRING` and `::INTEGER`/`::DATE` casts.
+- Files: `src/wheeck/recording_docs.py:81-93`, `sql/views/vw_discard_message.sql`, `sql/views/vw_gap_message.sql`, `sql/views/vw_delivery_gap.sql:37-39`, `src/wheeck/constants.py:138-156`
 - Impact: Any change to a message template, or a value that contains a delimiter such as `, genre: `, breaks the parsing. A failed cast breaks the whole view, which breaks `QUERY_CHECK_GAPS` and the gap check in `run()`. `delivery_discard` already stores the same fields in typed columns, linked through `id_warning_message`.
 - Fix approach: Build `vw_discard_message` as a join of `delivery_warning` with `delivery_discard`. For GAP rows, add nullable `document_number` and `document_year` columns to `delivery_warning`. Keep `message_text` for display only.
 
@@ -32,12 +32,12 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 - Fix approach: Extract a pure `extract_delivery(text, members) -> (Delivery, list[str])` with no I/O. Keep `doc_scanner` as the transactional shell. Replace the anonymous class with a plain list of error names.
 
 **Positional coupling between `Delivery` and SQL:**
-- Issue: `QUERY_INSERT_DELIVERY` receives `astuple(delivery)[:-1]` (`recording_docs.py:359`), and `QUERY_INSERT_DISCARD` receives the full `astuple(delivery)` (`recording_docs.py:391`). This only works while the `Delivery` field order (`recording_docs.py:34-47`) matches the column lists in `src/wheeck/constants.py:37-54, 103-121`. `vw_delivery_gap` unions `SELECT * FROM wheeck.delivery` with `SELECT * FROM wheeck.delivery_history` (`db/views/vw_delivery_gap.sql:3-6`).
+- Issue: `QUERY_INSERT_DELIVERY` receives `astuple(delivery)[:-1]` (`recording_docs.py:359`), and `QUERY_INSERT_DISCARD` receives the full `astuple(delivery)` (`recording_docs.py:391`). This only works while the `Delivery` field order (`recording_docs.py:34-47`) matches the column lists in `src/wheeck/constants.py:37-54, 103-121`. `vw_delivery_gap` unions `SELECT * FROM wheeck.delivery` with `SELECT * FROM wheeck.delivery_history` (`sql/views/vw_delivery_gap.sql:3-6`).
 - Impact: Reordering or adding a `Delivery` field, or letting the two table definitions drift apart, silently shifts values into the wrong columns.
 - Fix approach: Pass explicit field tuples, or name the columns in the view's `UNION ALL`.
 
 **`delivery_history` is ignored by the duplicate and distance checks:**
-- Issue: `delivery_history` (`db/tables/delivery_history.sql`) is filled manually, and only `vw_delivery_gap` reads it. `QUERY_CHECK_DUPLICATE` and `QUERY_GET_DISTANCE` (`src/wheeck/constants.py:56-83`) query only `wheeck.delivery`.
+- Issue: `delivery_history` (`sql/tables/delivery_history.sql`) is filled manually, and only `vw_delivery_gap` reads it. `QUERY_CHECK_DUPLICATE` and `QUERY_GET_DISTANCE` (`src/wheeck/constants.py:56-83`) query only `wheeck.delivery`.
 - Impact: After rows are archived, a re-dropped archived DDT is inserted into `delivery` again, and the cities of archived rows are geocoded again.
 - Fix approach: Add `UNION ALL` over `delivery_history` to both queries, or document that archived DDTs must never be re-dropped.
 
@@ -51,11 +51,11 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 - Impact: A change of database host or port moves the application but not the backup, and nothing reports the mismatch.
 - Fix approach: Build the `pg_dump` argument list from the querier config and call `subprocess.run([...])` without `shell=True`.
 
-**No schema migrations, and the install script is destructive:**
-- Issue: `db/install.sql` runs `db/schema/wheeck.sql`, whose first line is `DROP SCHEMA IF EXISTS wheeck CASCADE;`. The `CREATE TABLE IF NOT EXISTS` statements suggest idempotence, but the schema is always dropped first. `CREATE INDEX` statements have no `IF NOT EXISTS`. `CREATE USER wheeck` fails when the role exists, and `psql` continues past errors unless `ON_ERROR_STOP` is set.
-- Files: `db/install.sql`, `db/schema/wheeck.sql:1`, `db/roles/wheeck.sql:9`, `db/tables/*.sql`
-- Impact: Running the install script against the production database deletes every delivery, warning and history row. The only way to change the schema is a manual `ALTER` or a reinstall followed by a restore from `scheme/wheeck.dump`.
-- Fix approach: Move the `DROP SCHEMA` into a separate, explicitly named reset script. Add `\set ON_ERROR_STOP on` to `db/install.sql`. Keep numbered migration scripts for later changes.
+**No schema migrations, and the install is destructive:**
+- Issue: The install sequence starts with `sql/schema/wheeck.sql`, whose first line is `DROP SCHEMA IF EXISTS wheeck CASCADE;`. The `CREATE TABLE IF NOT EXISTS` statements suggest idempotence, but the schema is always dropped first. `CREATE INDEX` statements have no `IF NOT EXISTS`. `CREATE USER wheeck` fails when the role exists, and `psql` continues past errors unless `ON_ERROR_STOP` is set.
+- Files: `sql/schema/wheeck.sql:1`, `sql/roles/wheeck.sql:9`, `sql/tables/*.sql`
+- Impact: Running the install against the production database deletes every delivery, warning and history row. The only way to change the schema is a manual `ALTER` or a reinstall followed by a restore from `scheme/wheeck.dump`.
+- Fix approach: Move the `DROP SCHEMA` into a separate, explicitly named reset script. Run `\set ON_ERROR_STOP on` before the `\ir` lines. Keep numbered migration scripts for later changes.
 
 **Dead code:**
 - Files: `LowQuerier` (`src/core/querier.py:211-293`, exported from `src/core/__init__.py:2`, never used), `Querier.save_excel` (`src/core/querier.py:174-208`), `Querier.cursor` property (`src/core/querier.py:97-105`), `GeoMap.get_distance` (`src/geo/geo.py:54-76`), `Delivery.calculate_distance` (`src/wheeck/recording_docs.py:63-67`, referenced only in a comment), and the `!= -1` check at `recording_docs.py:391`, which its own comment calls dead code.
@@ -72,7 +72,7 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 - Fix approach: Add `!/scheme/*.xlsx` to `.gitignore` and commit the templates.
 
 **Constraint name does not match its definition:**
-- Issue: `uq_delivery_document_number_genre_year` is `UNIQUE (document_number, document_genre, document_date)` (`db/tables/delivery.sql:18-19`, same in `delivery_history.sql:18-19`). It constrains the full date, while `QUERY_CHECK_DUPLICATE` (`src/wheeck/constants.py:63-65`) checks the year.
+- Issue: `uq_delivery_document_number_genre_year` is `UNIQUE (document_number, document_genre, document_date)` (`sql/tables/delivery.sql:18-19`, same in `delivery_history.sql:18-19`). It constrains the full date, while `QUERY_CHECK_DUPLICATE` (`src/wheeck/constants.py:63-65`) checks the year.
 - Impact: The database accepts two documents with the same number and genre in the same year if their dates differ. Only the Python-side check catches this case.
 - Fix approach: Use a unique index on `(document_number, document_genre, EXTRACT(YEAR FROM document_date))`, or rename the constraint.
 
@@ -103,7 +103,7 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 **A discard can only be promoted if every column is non-NULL, including nullable ones:**
 - Symptoms: The user fixes a `delivery_discard` row and puts its page PDF back into `DDTs/`, but the page is discarded again with "still found NULL cell". A new discard PDF named `..._P001_P001.pdf` is written.
 - Files: `src/wheeck/recording_docs.py:330-339`, `src/wheeck/constants.py:85-102`
-- Trigger: `if None not in discard` requires all 11 selected columns to be non-NULL. In `wheeck.delivery`, `vehicle_driver` and `distance` are nullable (`db/tables/delivery.sql:11-12`). A discard whose driver could not be resolved, or whose city cannot be geocoded, cannot be promoted until the user also invents those values.
+- Trigger: `if None not in discard` requires all 11 selected columns to be non-NULL. In `wheeck.delivery`, `vehicle_driver` and `distance` are nullable (`sql/tables/delivery.sql:11-12`). A discard whose driver could not be resolved, or whose city cannot be geocoded, cannot be promoted until the user also invents those values.
 - Fix: Check only the columns that are `NOT NULL` in `wheeck.delivery`.
 
 **A rescanned discard page that now parses cleanly leaves its discard open:**
@@ -164,10 +164,10 @@ Each section is ordered by severity, most severe first. Line numbers refer to th
 ## Security Considerations
 
 **A database password is committed to the repository:**
-- Risk: `db/roles/wheeck.sql:9` contains `CREATE USER wheeck WITH PASSWORD` followed by a plaintext literal. Git history contains the same string in `config/querier.json` in every commit from `61bdf0c` up to the parent of `a8bc080`, the commit that sets it to `null`. All of these commits are on `origin/main` (GitHub).
-- Files: `db/roles/wheeck.sql:9`; git history of `config/querier.json`
+- Risk: `sql/roles/wheeck.sql:9` contains `CREATE USER wheeck WITH PASSWORD` followed by a plaintext literal. Git history contains the same string in `config/querier.json` in every commit from `61bdf0c` up to the parent of `a8bc080`, the commit that sets it to `null`. All of these commits are on `origin/main` (GitHub).
+- Files: `sql/roles/wheeck.sql:9`; git history of `config/querier.json`
 - Current mitigation: Live configuration is read from the gitignored `config/querier.local.json` (`.gitignore:12`, `src/wheeck/constants.py:10-12`).
-- Recommendations: Rotate the `wheeck` role password. Pass the new password to the script as a psql variable (`psql -v wheeck_password=... -f db/install.sql`, then `PASSWORD :'wheeck_password'`). If the repository is or ever becomes public, treat the old value as leaked. Do not quote the value in documentation.
+- Recommendations: Rotate the `wheeck` role password. Pass the new password as a psql variable (start `psql` with `-v wheeck_password=...` and write `PASSWORD :'wheeck_password'` in `sql/roles/wheeck.sql`). If the repository is or ever becomes public, treat the old value as leaked. Do not quote the value in documentation.
 
 **Backups run with superuser credentials:**
 - Risk: `CMD_BACKUP_DB` (`src/wheeck/constants.py:27`) runs `pg_dump -U postgres -w` through `subprocess.run(..., shell=True)` (`src/wheeck/recording_docs.py:651`). It connects as the `postgres` superuser, and `-w` means it never prompts for a password. Where those credentials come from was not inspected, but the account that runs wheeck can authenticate as the superuser without interaction.
@@ -193,7 +193,7 @@ Current volumes are small: monthly DDT batches named `YYYY_MM_DDT_<first>_<last>
 
 **The gap view is recomputed in full on every run:**
 - Problem: `QUERY_CHECK_GAPS` reads `vw_delivery_gap`. That view generates every number between MIN and MAX per year with `GENERATE_SERIES`, runs a correlated subquery for `document_month` on each gap row (`document_month` is not used by the Python code), and joins on fields parsed out of text from `vw_discard_message`.
-- Files: `db/views/vw_delivery_gap.sql:7-41`, `src/wheeck/recording_docs.py:518-534`
+- Files: `sql/views/vw_delivery_gap.sql:7-41`, `src/wheeck/recording_docs.py:518-534`
 - Cause: A single misparsed document number (`chk_delivery_document_number` only enforces `> 0`) widens the series. That produces one false GAP warning per missing number, and each is inserted on its own connection (see the next item).
 - Improvement path: Drop `document_month` or move it into a separate view. Add an upper-bound sanity check on `document_number`, relative to the batch range in the filename, before insert.
 
@@ -210,7 +210,7 @@ Current volumes are small: monthly DDT batches named `YYYY_MM_DDT_<first>_<last>
 - Improvement path: Keep one `PdfDocument` open for the discard phase, or batch the discards after the loop. The handle must still be released before the rollback rename (see `recording_docs.py:175-177`).
 
 **Date filters that cannot use an index:**
-- Problem: `EXTRACT(YEAR FROM ...)` and `EXTRACT(MONTH FROM ...)` filters (`src/wheeck/constants.py:65, 167-168, 184`) cannot use an index, and there is no index on `delivery_date` or `document_date`. `idx_delivery_warning_message_text` (`db/tables/delivery_warning.sql:12-14`) is not used by any query.
+- Problem: `EXTRACT(YEAR FROM ...)` and `EXTRACT(MONTH FROM ...)` filters (`src/wheeck/constants.py:65, 167-168, 184`) cannot use an index, and there is no index on `delivery_date` or `document_date`. `idx_delivery_warning_message_text` (`sql/tables/delivery_warning.sql:12-14`) is not used by any query.
 - Improvement path: Use range predicates (`delivery_date >= make_date(?, ?, 1) AND delivery_date < ...`), add an index on `delivery_date`, and drop the unused index.
 
 ## Fragile Areas
@@ -237,7 +237,7 @@ Current volumes are small: monthly DDT batches named `YYYY_MM_DDT_<first>_<last>
 - Test coverage: None.
 
 **Message templates and SQL views:**
-- Files: `src/wheeck/recording_docs.py:91-93`, `db/views/vw_discard_message.sql`, `db/views/vw_gap_message.sql`
+- Files: `src/wheeck/recording_docs.py:91-93`, `sql/views/vw_discard_message.sql`, `sql/views/vw_gap_message.sql`
 - Why fragile: The views slice `message_text` on literal substrings such as `'[number: '`, `', genre: '`, `'of doc '` and `' of year '`. Editing a template string in Python silently breaks gap detection and discard tracking.
 - Safe modification: Change the Python template and the matching view in the same commit, and re-run `QUERY_CHECK_GAPS` against existing rows. Removing the coupling is the better fix (see Tech Debt).
 
@@ -311,7 +311,7 @@ Current volumes are small: monthly DDT batches named `YYYY_MM_DDT_<first>_<last>
 - Blocks: Unattended operation. Every stuck document needs a manual rename.
 
 **Schema migrations:**
-- Problem: The only provisioning path is the destructive `db/install.sql`.
+- Problem: The only provisioning path is the destructive full install with psql `\ir`.
 - Blocks: Evolving the schema of a populated database safely.
 
 **Startup validation and bootstrap:**
@@ -348,13 +348,13 @@ Current volumes are small: monthly DDT batches named `YYYY_MM_DDT_<first>_<last>
 
 **Discard promotion and gap closing:**
 - What's not tested: Promoting a corrected `delivery_discard` row, closing warnings through `trg_sync_discard_status`, and closing gap warnings.
-- Files: `src/wheeck/recording_docs.py:318-339, 407-416`, `db/functions/sync_discard_status.sql`, `db/triggers/trg_sync_discard_status.sql`
+- Files: `src/wheeck/recording_docs.py:318-339, 407-416`, `sql/functions/sync_discard_status.sql`, `sql/triggers/trg_sync_discard_status.sql`
 - Risk: Warnings stay open, or corrected discards are never recorded.
 - Priority: Medium
 
 **SQL views:**
 - What's not tested: Parsing of `message_text` in `vw_discard_message` and `vw_gap_message`, including the `None` document-number case, and the gap series in `vw_delivery_gap`.
-- Files: `db/views/*.sql`
+- Files: `sql/views/*.sql`
 - Risk: A template edit breaks gap detection without any error until a cast fails.
 - Priority: Medium
 

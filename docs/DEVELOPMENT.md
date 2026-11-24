@@ -36,7 +36,7 @@ wheeck is developed and run on Windows. The commands below use Git Bash.
 
    <!-- VERIFY: the run references scheme/overview.xlsx and scheme/summary.xlsx, which are not in the repository -->
 
-5. Install the database schema as described in the README (`psql -U postgres -d postgres -f db/install.sql`). The script drops the `wheeck` schema first, so it deletes all recorded data in the target database.
+5. Install the database schema as described in the README: run its `\ir` lines at a `psql` prompt started from the repository root. The first script drops the `wheeck` schema, so it deletes all recorded data in the target database.
 
 There is no `.env` file, no build step and no compile step. The application runs straight from `src/`.
 
@@ -78,7 +78,7 @@ The project has no build step, no task runner and no `Makefile`. Run these comma
 | `pip install -r requirements.txt` | Installs the four runtime dependencies (`openpyxl`, `openrouteservice`, `pyodbc`, `pypdfium2`), pinned with `~=`. There are no development dependencies and no lockfile. |
 | `cd src && python main.py` | Runs the batch on the PDFs in `DDTs/` (see [No development mode](#no-development-mode)). |
 | `cd src && python -c "from wheeck import generate_overview; generate_overview(2024, 1)"` | Rebuilds one monthly workbook (`res/2024_01.xlsx`) from the database. `generate_summary(year)` does the same for the yearly trip summary. |
-| `psql -U postgres -d postgres -f db/install.sql` | Installs the schema by chaining the scripts in `db/` with `\ir`. **It drops the `wheeck` schema and all its data first.** |
+| `psql -U postgres -d postgres`, then the `\ir` lines from the README | Installs the schema by running the scripts in `sql/` in dependency order. **It drops the `wheeck` schema and all its data first.** |
 | `.venv/Scripts/python.exe -m py_compile src/main.py src/core/*.py src/geo/*.py src/wheeck/*.py` | Checks the syntax of every module. It needs no database. Run it in Git Bash, because PowerShell does not expand the `*.py` globs. |
 | `cd src && ../.venv/Scripts/python.exe -c "import core; print(core.__version__)"` | Import smoke test of the `core` package. It needs no database and writes no log file. |
 
@@ -95,7 +95,7 @@ No linter, formatter or type checker is configured. There is no `pyproject.toml`
 - Write a short compound statement on one line when its body is a single short statement, for example `try: wheeck.run()`.
 - Keep paths, regex patterns and SQL queries as module-level constants in `src/wheeck/constants.py` (`PATH_*`, `PATTERN_*`, `QUERY_*`). SQL constants use UPPERCASE keywords, `?` placeholders and schema-qualified names such as `wheeck.delivery`.
 - Write type hints, but keep them accurate by hand, because nothing checks them.
-- Put each database object in its own file under `db/<kind>/`, and add an `\ir` line for it to `db/install.sql` after every object it depends on.
+- Put each database object in its own file under `sql/<kind>/`, and add its `\ir` line to the install sequence in `README.md`, after every object it depends on.
 
 ## Branch conventions
 
@@ -115,6 +115,6 @@ No pull request process is defined. The repository has no `.github/` directory, 
 
 - Run the syntax check and the import smoke test from [Build commands](#build-commands).
 - Run the batch on sample DDT PDFs against a database you can change. Then read today's `log/YYYY_MM_DD.log` and the affected tables, or the views `wheeck.vw_discard_message` and `wheeck.vw_gap_message`.
-- If you add a column to the delivery data, change `db/tables/delivery.sql`, `db/tables/delivery_discard.sql` and `db/tables/delivery_history.sql` together. [STRUCTURE.md](STRUCTURE.md) lists every place a new field must reach.
+- If you add a column to the delivery data, change `sql/tables/delivery.sql`, `sql/tables/delivery_discard.sql` and `sql/tables/delivery_history.sql` together. [STRUCTURE.md](STRUCTURE.md) lists every place a new field must reach.
 - If you add a config key, add it with a `null` value to the committed template `config/wheeck.json`, and document it in [CONFIGURATION.md](CONFIGURATION.md).
-- Keep secrets out of commits. `db/roles/wheeck.sql` is tracked and sets the `wheeck` role password in plain text. If you edit it to set your own password, do not commit that change. [CONCERNS.md](CONCERNS.md) covers the password that is already in the history.
+- Keep secrets out of commits. `sql/roles/wheeck.sql` is tracked and sets the `wheeck` role password in plain text. If you edit it to set your own password, do not commit that change. [CONCERNS.md](CONCERNS.md) covers the password that is already in the history.

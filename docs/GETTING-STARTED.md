@@ -30,14 +30,16 @@ This guide takes a fresh clone of wheeck to a first recorded batch of DDTs. whee
    Keep the virtualenv active for every command that follows.
 
 2. Install the database schema:
-   1. Open `db/roles/wheeck.sql` and change the password in the `CREATE USER` line. This sets the password of the `wheeck` role that the application connects with.
-   2. Run the install as a superuser, against the database that the config points to:
+   1. Open `sql/roles/wheeck.sql` and change the password in the `CREATE USER` line. This sets the password of the `wheeck` role that the application connects with.
+   2. From the repository root, open `psql` as a superuser, against the database that the config points to:
 
       ```bash
-      psql -U postgres -d postgres -f db/install.sql
+      psql -U postgres -d postgres
       ```
 
-   `db/install.sql` chains the files under `db/` in order: schema, tables, function, trigger, role, views. The first file, `db/schema/wheeck.sql`, runs `DROP SCHEMA IF EXISTS wheeck CASCADE`, so running the install again deletes every recorded delivery.
+   3. At the `psql` prompt, run the `\ir` lines listed in the README ([Installation](../README.md#installation), step 2). They run the files under `sql/` in order: schema, tables, function, trigger, role, views.
+
+   The repository does not track an install script. The first file, `sql/schema/wheeck.sql`, runs `DROP SCHEMA IF EXISTS wheeck CASCADE`, so running the install again deletes every recorded delivery.
 
 3. Create the real config files from the committed templates. The application reads only the gitignored `*.local.json` copies:
 
@@ -155,7 +157,7 @@ python -c "from wheeck import generate_overview, generate_summary; generate_over
 **The log shows `API error on searching` or `HTTP error on searching`.**
 OpenRouteService rejected the geocoding call, for example because of a wrong key. Check `ors_api_key` in `config/wheeck.local.json`.
 
-**Running `db/install.sql` a second time.**
+**Running the install a second time.**
 The install drops the `wheeck` schema and all its data. `CREATE USER` has no `IF NOT EXISTS`, so psql reports that the role already exists and continues. The role keeps its old password.
 
 ## Next steps

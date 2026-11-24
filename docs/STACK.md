@@ -9,13 +9,13 @@
 - Python 3.12+ (developed on 3.15.1): all application code under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src/wheeck/`)
 
 **Secondary:**
-- SQL (PostgreSQL dialect, including PL/pgSQL): the database schema under `db/`
-  - DDL scripts: `db/schema/wheeck.sql`, `db/tables/*.sql`, `db/views/*.sql`
-  - PL/pgSQL trigger function: `db/functions/sync_discard_status.sql`
-  - Trigger: `db/triggers/trg_sync_discard_status.sql`
-  - Role and grants: `db/roles/wheeck.sql`
+- SQL (PostgreSQL dialect, including PL/pgSQL): the database schema under `sql/`
+  - DDL scripts: `sql/schema/wheeck.sql`, `sql/tables/*.sql`, `sql/views/*.sql`
+  - PL/pgSQL trigger function: `sql/functions/sync_discard_status.sql`
+  - Trigger: `sql/triggers/trg_sync_discard_status.sql`
+  - Role and grants: `sql/roles/wheeck.sql`
 - Embedded SQL strings: every query the app runs is a module-level constant in `src/wheeck/constants.py` (`QUERY_*`). They use `?` placeholders, which is the pyodbc/ODBC parameter style.
-- psql meta-commands: `db/install.sql` chains the object scripts with `\ir`, so you must run it with `psql`.
+- psql meta-commands: the install runs the object scripts with `\ir` (sequence in the README), so it needs `psql`. The repository tracks no install script.
 
 **Why the Python floor is 3.12** (nothing in the repo pins the version):
 - `sqlite3.connect(..., autocommit=...)` in `src/core/querier.py` (line 227) needs Python 3.12 or later.
@@ -115,7 +115,7 @@ Direct dependencies, from `requirements.txt`:
 - Python 3.12 or later, with a virtualenv: `python -m venv .venv`, then `.venv\Scripts\pip install -r requirements.txt`.
 - psqlODBC installed, registered under the driver name given in `config/querier.local.json`. The template uses `PostgreSQL ANSI`.
 - A PostgreSQL server reachable at the configured `server`/`port`. The template uses `127.0.0.1:5432`, database `postgres`.
-- The schema must be installed once with `psql -f db/install.sql` as a superuser. `db/schema/wheeck.sql` runs `DROP SCHEMA IF EXISTS wheeck CASCADE`, so re-running the install wipes all data.
+- The schema must be installed once as a superuser, with the `\ir` sequence in the README. `sql/schema/wheeck.sql` runs `DROP SCHEMA IF EXISTS wheeck CASCADE`, so re-running the install wipes all data.
 - PostgreSQL client tools on `PATH`:
   - `psql`, for the install.
   - `pg_dump`, for the automatic backup at the end of each run. It runs once any file name in `DDTs/` matches `PATTERN_WORKING_DOC`, even if that document rolled back.

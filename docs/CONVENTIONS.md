@@ -3,7 +3,7 @@
 
 **Analysis Date:** 2026-11-22
 
-Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src/wheeck/`) and the PostgreSQL scripts under `db/`. No linter or formatter enforces anything, so the rules below are the house style the code already follows. Match them when you change code.
+Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src/wheeck/`) and the PostgreSQL scripts under `sql/`. No linter or formatter enforces anything, so the rules below are the house style the code already follows. Match them when you change code.
 
 ## Naming Patterns
 
@@ -11,7 +11,7 @@ Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src
 - Modules use `snake_case.py` and are named after their job: `src/wheeck/recording_docs.py` (records documents), `src/wheeck/overview_docs.py` (writes Excel overviews), `src/core/querier.py` (wraps the database), `src/geo/geo.py` (wraps OpenRouteService).
 - Packages use one lowercase word: `core`, `geo`, `wheeck`.
 - Every module-level `PATH_*`, `PATTERN_*`, `QUERY_*`, `CMD_*` and `OVERVIEW_*` constant, every regex and every SQL string live in `src/wheeck/constants.py`. Class constants (`Querier.FETCH_*`, `_EXCEL_FORMATS`) and the `MessageGenre` templates stay in their class, and some file names are built inline, such as `'overview.xlsx'`, `'summary.xlsx'`, `'wheeck.dump'` and `'querier.json'`.
-- SQL scripts use one file per database object, named after the object: `db/tables/delivery_discard.sql`, `db/views/vw_gap_message.sql`, `db/triggers/trg_sync_discard_status.sql`, `db/functions/sync_discard_status.sql`.
+- SQL scripts use one file per database object, named after the object: `sql/tables/delivery_discard.sql`, `sql/views/vw_gap_message.sql`, `sql/triggers/trg_sync_discard_status.sql`, `sql/functions/sync_discard_status.sql`.
 
 **Functions:**
 - Use `snake_case`. Start with a verb prefix that shows what the function does:
@@ -48,7 +48,7 @@ Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src
   - `CMD_*`: shell commands.
   - `OVERVIEW_*`: Excel formatting.
 
-**SQL (`db/` and `QUERY_*` strings):**
+**SQL (`sql/` and `QUERY_*` strings):**
 - Identifiers are `snake_case` and always schema-qualified (`wheeck.delivery`).
 - Name constraints and objects with these prefixes:
   - Primary key: `pk_<table>_id`.
@@ -93,9 +93,9 @@ Scope: Python sources under `src/` (`src/main.py`, `src/core/`, `src/geo/`, `src
       ;
   """
   ```
-- `.sql` files in `db/` use UPPERCASE keywords and a 4-space indent. `CREATE TABLE/VIEW/INDEX/TRIGGER/FUNCTION` statements put `;` on its own line. One-line statements keep `;` inline: every `DROP ...`, `db/schema/wheeck.sql`, `db/roles/wheeck.sql`, and `RETURN NEW;` / `END;` inside function bodies.
+- `.sql` files in `sql/` use UPPERCASE keywords and a 4-space indent. `CREATE TABLE/VIEW/INDEX/TRIGGER/FUNCTION` statements put `;` on its own line. One-line statements keep `;` inline: every `DROP ...`, `sql/schema/wheeck.sql`, `sql/roles/wheeck.sql`, and `RETURN NEW;` / `END;` inside function bodies.
   - Views and functions: `DROP ... IF EXISTS`, then `CREATE OR REPLACE ...`.
-  - Triggers: `DROP TRIGGER IF EXISTS ... ON <table>`, then a plain `CREATE TRIGGER` (`db/triggers/trg_sync_discard_status.sql`).
+  - Triggers: `DROP TRIGGER IF EXISTS ... ON <table>`, then a plain `CREATE TRIGGER` (`sql/triggers/trg_sync_discard_status.sql`).
   - Tables: `CREATE TABLE IF NOT EXISTS`, with `CREATE INDEX` statements after the table.
 
 **Linting:**
@@ -263,7 +263,7 @@ def city_distance(delivery_city: str) -> float | None:
 **Data objects:**
 - `Delivery` (`src/wheeck/recording_docs.py:29`) is a `@dataclass`. Fields filled by extraction use `field(init=False, default=None)`.
 - The field order is part of the SQL contract. `astuple(delivery)` feeds `QUERY_INSERT_DISCARD` positionally, and `astuple(delivery)[:-1]` feeds `QUERY_INSERT_DELIVERY` (it drops `id_warning_message`). When you add or move a field, update both INSERT column lists in `src/wheeck/constants.py`.
-- The values of the `MessageGenre` enum are `%`-format templates. The SQL views `db/views/vw_gap_message.sql` and `db/views/vw_discard_message.sql` parse the rendered text, so changing a template string means changing the view. Use `%(name)s`, not `%(name)d`, for any field that can be `None`.
+- The values of the `MessageGenre` enum are `%`-format templates. The SQL views `sql/views/vw_gap_message.sql` and `sql/views/vw_discard_message.sql` parse the rendered text, so changing a template string means changing the view. Use `%(name)s`, not `%(name)d`, for any field that can be `None`.
 
 ## Module Design
 
@@ -288,7 +288,7 @@ def city_distance(delivery_city: str) -> float | None:
 - Never commit real values. The `*.local.json` files are gitignored.
 
 **Database scripts:**
-- Add a new database object as a new file under `db/<kind>/`, then add an `\ir` line to `db/install.sql` in dependency order.
+- Add a new database object as a new file under `sql/<kind>/`, then add its `\ir` line to the install sequence in `README.md`, in dependency order.
 
 **Commits:**
 - Commit messages use Conventional Commits, usually with a scope: `chore(deps): ...`, `refactor(db): ...`, `chore(config): ...`, `fix(...)`, `feat(...)`, `docs(...)`. Some omit it (`docs: map existing codebase`, `chore: remove .planning docs`). Most commits before `cd893bf` use plain subjects (`Fix error on managing path variable`).

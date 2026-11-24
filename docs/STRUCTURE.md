@@ -21,8 +21,7 @@ wheeck/
 │       ├── constants.py        # Paths, regex patterns, SQL queries, pg_dump command, Excel formats
 │       ├── recording_docs.py   # DDT pipeline: run, doc_scanner, Delivery, MessageGenre, helpers
 │       └── overview_docs.py    # Excel overview/summary generation
-├── db/                         # PostgreSQL schema, one file per object
-│   ├── install.sql             # psql entry script, \ir includes in dependency order
+├── sql/                        # PostgreSQL schema, one file per object
 │   ├── schema/wheeck.sql       # DROP + CREATE SCHEMA wheeck
 │   ├── tables/                 # delivery, delivery_history, delivery_warning, delivery_discard
 │   ├── functions/              # sync_discard_status (PL/pgSQL trigger function)
@@ -70,10 +69,10 @@ wheeck/
 - Contains: Pipeline functions, the domain dataclass and enum, every SQL string and regex.
 - Key files: `src/wheeck/recording_docs.py`, `src/wheeck/constants.py`, `src/wheeck/overview_docs.py`
 
-**`db/`:**
+**`sql/`:**
 - Purpose: Full DDL for PostgreSQL schema `wheeck`. Each object has its own file, grouped by object kind.
-- Contains: `.sql` scripts only. Install with `psql -f db/install.sql`; it drops and recreates the schema.
-- Key files: `db/install.sql` (include order), `db/views/vw_delivery_gap.sql` (gap logic), `db/views/vw_discard_message.sql` (parses `DISCARD` message text)
+- Contains: `.sql` scripts only. Install them in dependency order with the psql `\ir` meta-command (sequence in the README); the install drops and recreates the schema. No install script is tracked.
+- Key files: `sql/views/vw_delivery_gap.sql` (gap logic), `sql/views/vw_discard_message.sql` (parses `DISCARD` message text)
 
 **`config/`:**
 - Purpose: Runtime configuration. Committed `*.json` files are templates with null values. The code reads only the gitignored `*.local.json` copies (`src/wheeck/constants.py:11-12`).
@@ -104,7 +103,7 @@ wheeck/
 - `src/main.py`: Batch entry. Run as a script: `python src/main.py`.
 - `src/wheeck/recording_docs.py` `run()` (line 593): Pipeline orchestrator.
 - `src/wheeck/__init__.py`: Public API for interactive use (`generate_overview`, `generate_summary`, `check_gaps`, ...).
-- `db/install.sql`: Database install script.
+- `\ir` sequence in `README.md`: Database install (no install script is tracked).
 
 **Configuration:**
 - `src/wheeck/constants.py`: All project paths (`PATH_*`), config file paths (`PATH_CFG_PRJ`, `PATH_CFG_DB`), regexes (`PATTERN_*`), SQL (`QUERY_*`), `CMD_BACKUP_DB`, Excel formats (`OVERVIEW_*`).
@@ -118,8 +117,8 @@ wheeck/
 - `src/wheeck/overview_docs.py`: `generate_current()`, `generate_overview()`, `generate_summary()`.
 - `src/core/querier.py`: DB wrapper used by every DB call.
 - `src/geo/geo.py`: Distance calculation.
-- `db/views/vw_delivery_gap.sql`, `db/views/vw_discard_message.sql`, `db/views/vw_gap_message.sql`: Gap detection and message parsing logic in SQL.
-- `db/functions/sync_discard_status.sql` + `db/triggers/trg_sync_discard_status.sql`: Sync discard status from warning status.
+- `sql/views/vw_delivery_gap.sql`, `sql/views/vw_discard_message.sql`, `sql/views/vw_gap_message.sql`: Gap detection and message parsing logic in SQL.
+- `sql/functions/sync_discard_status.sql` + `sql/triggers/trg_sync_discard_status.sql`: Sync discard status from warning status.
 
 **Testing:**
 - Not detected. There is no test directory, test framework or test config.
@@ -128,7 +127,7 @@ wheeck/
 
 **Files:**
 - Python modules: `snake_case.py`. Modules that work on documents end in `_docs.py` (`recording_docs.py`, `overview_docs.py`).
-- SQL files: one object per file, named exactly as the DB object: `db/tables/delivery_warning.sql`, `db/views/vw_gap_message.sql`, `db/triggers/trg_sync_discard_status.sql`.
+- SQL files: one object per file, named exactly as the DB object: `sql/tables/delivery_warning.sql`, `sql/views/vw_gap_message.sql`, `sql/triggers/trg_sync_discard_status.sql`.
 - DDT input PDFs: `YYYY_MM_DDT_<first doc number:4>_<last doc number:4>.pdf` (for example `2024_01_DDT_0001_0267.pdf`), enforced by `PATTERN_WORKING_DOC`.
 - Discarded pages: `<source stem>_P<page:3>.pdf` (for example `2024_01_DDT_0001_0267_P005.pdf`), built by `discarded_doc_path()`.
 - Processing states: `.recording.pdf` (in progress), `.recorded.pdf` (done, in `DDTs/recorded/`), `.failed.pdf` (restore failed).
@@ -137,7 +136,7 @@ wheeck/
 
 **Directories:**
 - Python packages: short lowercase single word (`core`, `geo`, `wheeck`).
-- `db/` subfolders: plural object kind (`tables`, `views`, `functions`, `triggers`, `roles`), except `schema`.
+- `sql/` subfolders: plural object kind (`tables`, `views`, `functions`, `triggers`, `roles`), except `schema`.
 
 **Identifiers:**
 - Constants in `src/wheeck/constants.py` use a kind prefix: `PATH_*`, `PATTERN_*`, `QUERY_<VERB>_<OBJECT>` (`QUERY_INSERT_DELIVERY`, `QUERY_GET_GAP`, `QUERY_CHECK_DUPLICATE`), `CMD_*`, `OVERVIEW_*`.
@@ -151,7 +150,7 @@ wheeck/
 - Parsing: add a search block in the page loop of `doc_scanner()` in `src/wheeck/recording_docs.py`. Follow the existing pattern: log the search, on match set the `delivery.<field>`, on failure append the pattern name to `discarded_pages.on_error`.
 - Model: add the field to `Delivery` (`src/wheeck/recording_docs.py:30`) at the matching column position.
 - SQL: update `QUERY_INSERT_DELIVERY`, `QUERY_INSERT_DISCARD` and `QUERY_GET_DISCARD` in `src/wheeck/constants.py`.
-- Schema: add the column to `db/tables/delivery.sql`, `db/tables/delivery_discard.sql` and `db/tables/delivery_history.sql`. `vw_delivery_gap` uses `SELECT *` over a `UNION ALL` of `delivery` and `delivery_history`, so both tables must keep identical column lists.
+- Schema: add the column to `sql/tables/delivery.sql`, `sql/tables/delivery_discard.sql` and `sql/tables/delivery_history.sql`. `vw_delivery_gap` uses `SELECT *` over a `UNION ALL` of `delivery` and `delivery_history`, so both tables must keep identical column lists.
 - Tests: no test suite exists. Verify against sample PDFs in `DDTs/`.
 
 **New pipeline step (run once per batch):**
@@ -167,8 +166,8 @@ wheeck/
 - Add it to `src/wheeck/constants.py` as a `QUERY_*` triple-quoted string starting with `"""\`, with schema-qualified names (`wheeck.<table>`) and `?` placeholders.
 
 **New DB object (table, view, function, trigger):**
-- File: `db/<kind>/<object_name>.sql`. Views and functions start with `DROP ... IF EXISTS` and then `CREATE OR REPLACE`. Tables use `CREATE TABLE IF NOT EXISTS` with named constraints.
-- Wiring: add a `\ir <kind>/<object_name>.sql` line to `db/install.sql` after every object it depends on.
+- File: `sql/<kind>/<object_name>.sql`. Views and functions start with `DROP ... IF EXISTS` and then `CREATE OR REPLACE`. Tables use `CREATE TABLE IF NOT EXISTS` with named constraints.
+- Wiring: add a `\ir sql/<kind>/<object_name>.sql` line to the install sequence in `README.md`, after every object it depends on.
 
 **New external service wrapper:**
 - Implementation: a new top-level package `src/<name>/` with `<name>.py` holding the class and `__init__.py` re-exporting it with `__version__`, like `src/geo/`.

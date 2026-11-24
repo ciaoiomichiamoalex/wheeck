@@ -27,13 +27,29 @@ The project runs on a Windows workstation. The commands below use Git Bash.
    pip install -r requirements.txt
    ```
 
-2. Set the password of the `wheeck` database role in `db/roles/wheeck.sql`, then install the schema as a superuser:
+2. Set the password of the `wheeck` database role in `sql/roles/wheeck.sql`, then install the schema as a superuser. Start `psql` from the repository root:
 
    ```bash
-   psql -U postgres -d postgres -f db/install.sql
+   psql -U postgres -d postgres
    ```
 
-   `db/schema/wheeck.sql` starts with `DROP SCHEMA IF EXISTS wheeck CASCADE`, so running the install again deletes all recorded data.
+   At the `psql` prompt, run the object scripts in dependency order with the `\ir` meta-command:
+
+   ```
+   \ir sql/schema/wheeck.sql
+   \ir sql/tables/delivery.sql
+   \ir sql/tables/delivery_history.sql
+   \ir sql/tables/delivery_warning.sql
+   \ir sql/tables/delivery_discard.sql
+   \ir sql/functions/sync_discard_status.sql
+   \ir sql/triggers/trg_sync_discard_status.sql
+   \ir sql/roles/wheeck.sql
+   \ir sql/views/vw_discard_message.sql
+   \ir sql/views/vw_gap_message.sql
+   \ir sql/views/vw_delivery_gap.sql
+   ```
+
+   The repository does not track an install script. To reuse these lines, save them in a local file at the repository root and run it with `psql -f`. `sql/schema/wheeck.sql` starts with `DROP SCHEMA IF EXISTS wheeck CASCADE`, so running the install again deletes all recorded data.
 
 3. Copy each committed config template to its gitignored `*.local.json` sibling and fill in the real values (see [Configuration](#configuration)):
 
@@ -69,7 +85,7 @@ The project runs on a Windows workstation. The commands below use Git Bash.
 
 The yearly trip summary query lays out two vehicles side by side, and it excludes the drivers of entries whose `vehicle` is `null` (`vehicle_driver NOT IN (...)`). It works as intended when `members` lists exactly two entries with a `vehicle`, and at least one entry with a `null` vehicle and a driver name.
 
-`config/querier.local.json` is a list of ODBC connections. The application uses the entry with `"name": "main"`. Set its `password` to the one set for the `wheeck` role in `db/roles/wheeck.sql`.
+`config/querier.local.json` is a list of ODBC connections. The application uses the entry with `"name": "main"`. Set its `password` to the one set for the `wheeck` role in `sql/roles/wheeck.sql`.
 
 The automatic backup runs `pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres -n wheeck` with the flags `-w -c -F c` (`CMD_BACKUP_DB`, hardcoded in `src/wheeck/constants.py`). Because of `-w`, the `postgres` user must be able to connect without a password prompt, for example through a password file.
 
@@ -139,7 +155,7 @@ generate_summary(2024)      # writes res/2024_TRIPS.xlsx from scheme/summary.xls
 - `src/wheeck/recording_docs.py`: text extraction from the PDFs, with one database transaction per document, discard handling and the end-of-run backup.
 - `src/wheeck/overview_docs.py`: generation of the Excel overviews and summaries of the extracted information.
 - `src/wheeck/constants.py`: paths, file name and text patterns, SQL queries.
-- `db/`: PostgreSQL schema, one file per object, chained by `db/install.sql`.
+- `sql/`: PostgreSQL schema, one file per object, installed in dependency order with the psql `\ir` meta-command (see [Installation](#installation)).
 - `config/`: committed config templates.
 
 Further documentation is in `docs/`: [ARCHITECTURE](docs/ARCHITECTURE.md), [STRUCTURE](docs/STRUCTURE.md), [STACK](docs/STACK.md), [INTEGRATIONS](docs/INTEGRATIONS.md), [CONVENTIONS](docs/CONVENTIONS.md), [TESTING](docs/TESTING.md) and [CONCERNS](docs/CONCERNS.md).

@@ -58,8 +58,8 @@ The file is a list of named connection entries. A single object also works, beca
 | `server` | **Required** | none | PostgreSQL host. |
 | `port` | **Required** | none | PostgreSQL port. |
 | `database` | **Required** | none | Database that contains the `wheeck` schema. |
-| `user` | **Required** | none | Login role. The schema scripts create the role `wheeck` with `SELECT, INSERT, UPDATE` on the schema (`db/roles/wheeck.sql`). |
-| `password` | **Required** | none | Password of that role. It must match the password that `db/roles/wheeck.sql` sets when it creates the role. |
+| `user` | **Required** | none | Login role. The schema scripts create the role `wheeck` with `SELECT, INSERT, UPDATE` on the schema (`sql/roles/wheeck.sql`). |
+| `password` | **Required** | none | Password of that role. It must match the password that `sql/roles/wheeck.sql` sets when it creates the role. |
 
 `Querier` keeps the parsed entry in the class attribute `Querier._cache_config`. Within one process the file is read only once per file path and connection name, so edits apply from the next run.
 

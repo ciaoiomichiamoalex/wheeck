@@ -37,7 +37,7 @@ wheeck is a single-process batch ETL application that records deliveries from It
            ▼                                    ▼
 ┌────────────────────────┐  ┌──────────────────────────────────────────────┐
 │ OpenRouteService API   │  │ PostgreSQL schema `wheeck` (via ODBC)        │
-│ (geocode + directions) │  │ `db/` scripts: tables, views, trigger        │
+│ (geocode + directions) │  │ `sql/` scripts: tables, views, trigger       │
 └────────────────────────┘  └──────────────────────────────────────────────┘
 
 Filesystem side effects: `DDTs/` (input queue, discarded/, recorded/), `res/` (Excel
@@ -60,7 +60,7 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 | DB access | `Querier` (pyodbc, chained `run().fetch()`, commit/rollback, Excel export) and `LowQuerier` (sqlite3 variant) | `src/core/querier.py` |
 | Common utilities | `decode_json` (JSON file filter), `get_logger` (daily file + console logger) | `src/core/common.py` |
 | Geo wrapper | `GeoMap.search`, `get_distance`, `get_distance_from_coords` over the `openrouteservice` client | `src/geo/geo.py` |
-| Database schema | Tables, views, trigger function, role, install script | `db/` |
+| Database schema | Tables, views, trigger function, role | `sql/` |
 
 ## Pattern Overview
 
@@ -71,7 +71,7 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 - One database transaction per PDF document (`doc_scanner`), with compensating filesystem cleanup on rollback.
 - The filesystem acts as the job queue: a document's state is encoded in its filename and folder.
 - All SQL lives as string constants in `src/wheeck/constants.py`; the Python code never builds SQL inline except the `IN (%s)` placeholder expansion in `generate_summary` (`src/wheeck/overview_docs.py:79`).
-- Business logic is split between Python and the database: gap detection, discard-message parsing and discard-status sync live in `db/views/` and `db/triggers/`.
+- Business logic is split between Python and the database: gap detection, discard-message parsing and discard-status sync live in `sql/views/` and `sql/triggers/`.
 
 ## Layers
 
@@ -98,8 +98,8 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 
 **Persistence layer (PostgreSQL schema `wheeck`):**
 - Purpose: Store deliveries, discards, warnings and historical deliveries; derive gaps and parsed messages through views.
-- Location: `db/` (installed with `psql -f db/install.sql`)
-- Contains: tables `delivery`, `delivery_history`, `delivery_warning`, `delivery_discard`; views `vw_discard_message`, `vw_gap_message`, `vw_delivery_gap`; function `sync_discard_status` and trigger `trg_sync_discard_status`; role script `db/roles/wheeck.sql`.
+- Location: `sql/` (installed by hand with the psql `\ir` meta-command, see the README)
+- Contains: tables `delivery`, `delivery_history`, `delivery_warning`, `delivery_discard`; views `vw_discard_message`, `vw_gap_message`, `vw_delivery_gap`; function `sync_discard_status` and trigger `trg_sync_discard_status`; role script `sql/roles/wheeck.sql`.
 - Depends on: PostgreSQL.
 - Used by: SQL constants in `src/wheeck/constants.py` and `CMD_BACKUP_DB` (`pg_dump`).
 
@@ -127,12 +127,12 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 2. `PATTERN_WORKING_DOC` accepts the `_Pnnn` suffix; `PATTERN_DISCARD_DOC` recognises it as a discard document (`src/wheeck/recording_docs.py:319`).
 3. If the page still fails parsing, `QUERY_GET_DISCARD` loads the open (`status IS TRUE`) discard row. The row is used only if none of its selected columns is NULL, so the missing values must be filled in `wheeck.delivery_discard` first. `Delivery.charge()` then copies the values and the page is treated as clean (`src/wheeck/recording_docs.py:328-339`). With NULLs left, the page stays discarded and keeps its existing warning id.
 4. The delivery is inserted and `QUERY_UPDATE_WARNING` sets the `DISCARD` warning `status = FALSE` (`src/wheeck/recording_docs.py:363`).
-5. Trigger `trg_sync_discard_status` (`db/triggers/trg_sync_discard_status.sql`) runs `wheeck.sync_discard_status()` (`db/functions/sync_discard_status.sql`), which copies the status to `delivery_discard`.
+5. Trigger `trg_sync_discard_status` (`sql/triggers/trg_sync_discard_status.sql`) runs `wheeck.sync_discard_status()` (`sql/functions/sync_discard_status.sql`), which copies the status to `delivery_discard`.
 6. Discard documents are never copied to `backup_dir` (`src/wheeck/recording_docs.py:634`).
 
 ### Gap Detection Flow
 
-1. `vw_delivery_gap` (`db/views/vw_delivery_gap.sql`) generates every document number between MIN and MAX per year over `delivery UNION ALL delivery_history`, and returns the missing ones with an `is_discard` flag joined from `vw_discard_message`.
+1. `vw_delivery_gap` (`sql/views/vw_delivery_gap.sql`) generates every document number between MIN and MAX per year over `delivery UNION ALL delivery_history`, and returns the missing ones with an `is_discard` flag joined from `vw_discard_message`.
 2. `check_gaps()` runs `QUERY_CHECK_GAPS` (gaps that are not discards and have no open `GAP` message) and writes one `GAP` warning per row (`src/wheeck/recording_docs.py:518-534`).
 3. A later document filling the gap closes the warning through `QUERY_GET_GAP` + `QUERY_UPDATE_WARNING` (step 10 of the primary path).
 
@@ -166,7 +166,7 @@ output), `scheme/` (Excel templates + pg_dump backups), `log/` (daily log files)
 
 **MessageGenre messages:**
 - Purpose: Human-readable warning text that is also machine-parsed.
-- Examples: `src/wheeck/recording_docs.py:81-93`, parsed by `db/views/vw_discard_message.sql` and `db/views/vw_gap_message.sql`.
+- Examples: `src/wheeck/recording_docs.py:81-93`, parsed by `sql/views/vw_discard_message.sql` and `sql/views/vw_gap_message.sql`.
 - Pattern: `%`-format templates filled by `save_warning(genre, **kwargs)`.
 
 **Filename state machine:**
@@ -190,7 +190,7 @@ wheeck/
 │   ├── wheeck/        # Application package: recording pipeline, Excel reports, constants and SQL
 │   ├── core/          # Infrastructure: Querier (pyodbc), LowQuerier (sqlite3), decode_json, get_logger
 │   └── geo/           # Infrastructure: GeoMap over the openrouteservice client
-├── db/                # PostgreSQL schema scripts, one file per object, run through db/install.sql
+├── sql/               # PostgreSQL schema scripts, one file per object, run in order with psql \ir
 ├── config/            # Committed JSON templates; the real *.local.json copies are gitignored
 ├── scheme/            # Excel templates (overview.xlsx, summary.xlsx) and pg_dump backups
 ├── DDTs/              # Input queue, with discarded/ and recorded/ subfolders
@@ -198,7 +198,7 @@ wheeck/
 └── log/               # Daily log files
 ```
 
-- `db/` keeps one file per table, view, function, trigger and role, so each object can be reviewed and re-applied on its own. `db/install.sql` fixes the creation order.
+- `sql/` keeps one file per table, view, function, trigger and role, so each object can be reviewed and re-applied on its own. The README lists the creation order as psql `\ir` lines. The repository tracks no install script.
 - `config/` separates committed templates from gitignored real values, so credentials and the OpenRouteService key stay out of the repository.
 - `DDTs/`, `res/` and `log/` are gitignored. So are `*.xlsx` and `*.dump`, which means the templates in `scheme/` are not in the repository and must be supplied locally.
 - The code never creates folders. `DDTs/discarded/`, `DDTs/recorded/`, `res/` and `log/` must exist before the first run. If `log/` is missing, `get_logger` writes to a file named `log` in the project root instead.
@@ -216,9 +216,9 @@ wheeck/
 - Responsibilities: Re-exports `generate_overview`, `generate_summary`, `generate_current`, `check_gaps`, `check_duplicate`, `check_similarity`, `discard_doc`, `doc_scanner`, `save_warning`, `run`, `RecordingError` and the path constants, for regenerating a report or re-running a step by hand.
 
 **Database install:**
-- Location: `db/install.sql`
-- Triggers: `psql -f db/install.sql` run by hand.
-- Responsibilities: Drops and recreates schema `wheeck` (`db/schema/wheeck.sql` uses `DROP SCHEMA IF EXISTS wheeck CASCADE`), then creates tables, function, trigger, role and views in dependency order.
+- Location: the `\ir` sequence in the README (Installation, step 2). The repository tracks no install script.
+- Triggers: run by hand at a `psql` prompt started from the repository root.
+- Responsibilities: Drops and recreates schema `wheeck` (`sql/schema/wheeck.sql` uses `DROP SCHEMA IF EXISTS wheeck CASCADE`), then creates tables, function, trigger, role and views in dependency order.
 
 ## Architectural Constraints
 
@@ -235,13 +235,13 @@ wheeck/
 - **Configuration files:** The real configs are `config/wheeck.local.json` and `config/querier.local.json` (gitignored). The committed `config/wheeck.json` and `config/querier.json` are templates with null values. The code reads only the `.local.json` files (`src/wheeck/constants.py:11-12`).
 - **Backup command is separate from DB config:** `CMD_BACKUP_DB` (`src/wheeck/constants.py:27`) hardcodes `pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres` with `-w` (never prompt for a password). It needs non-interactive auth for `postgres` (`.pgpass`, `PGPASSWORD` or trust auth) and does not read `config/querier.local.json`.
 - **Report assumptions:** `QUERY_GET_SUMMARY` takes exactly two vehicle parameters, and its `vehicle_driver NOT IN (%s)` list is built from `members` entries without a vehicle. `members` must list exactly two vehicles and at least one driver-only entry, or `generate_summary` sends invalid SQL (`NOT IN ()`) or the wrong number of parameters.
-- **Unused code paths:** Nothing in `src/wheeck/` uses `LowQuerier` or `Querier.save_excel` (`src/core/querier.py`). No Python code writes `wheeck.delivery_history`; only `db/views/vw_delivery_gap.sql` reads it.
+- **Unused code paths:** Nothing in `src/wheeck/` uses `LowQuerier` or `Querier.save_excel` (`src/core/querier.py`). No Python code writes `wheeck.delivery_history`; only `sql/views/vw_delivery_gap.sql` reads it.
 
 ## Anti-Patterns
 
 ### Changing message templates without updating the parsing views
 
-**What happens:** `MessageGenre.DISCARD` and `MessageGenre.GAP` (`src/wheeck/recording_docs.py:91-92`) produce text that `db/views/vw_discard_message.sql` and `db/views/vw_gap_message.sql` parse back with `STRPOS`/`SUBSTRING` on literal markers (`'[number: '`, `', genre: '`, `' of year '`, ...). `vw_delivery_gap` and `QUERY_CHECK_GAPS`/`QUERY_GET_GAP` depend on those views.
+**What happens:** `MessageGenre.DISCARD` and `MessageGenre.GAP` (`src/wheeck/recording_docs.py:91-92`) produce text that `sql/views/vw_discard_message.sql` and `sql/views/vw_gap_message.sql` parse back with `STRPOS`/`SUBSTRING` on literal markers (`'[number: '`, `', genre: '`, `' of year '`, ...). `vw_delivery_gap` and `QUERY_CHECK_GAPS`/`QUERY_GET_GAP` depend on those views.
 **Why it's wrong:** Any wording change silently breaks gap detection and discard matching. A `%d` instead of `%s` for a value that can be `None` raises `TypeError` inside the document transaction and rolls back the whole document.
 **Do this instead:** Treat the template strings and the views as one contract. Change both in the same commit, keep `%(document_number)s` for nullable values, and keep `NULLIF(..., 'None')` in the view.
 
@@ -260,7 +260,7 @@ wheeck/
 ### Inline SQL or regex in functions
 
 **What happens:** SQL text or regexes written directly inside functions. The codebase keeps them all in `src/wheeck/constants.py`; the only dynamic SQL is the `IN (%s)` placeholder expansion in `generate_summary`.
-**Why it's wrong:** Scattered SQL and regexes cannot be reviewed in one place against `db/` and real DDT text.
+**Why it's wrong:** Scattered SQL and regexes cannot be reviewed in one place against `sql/` and real DDT text.
 **Do this instead:** Add new SQL as `QUERY_*` and new regexes as `PATTERN_*` in `src/wheeck/constants.py`, with `?` placeholders (pyodbc qmark style).
 
 ## Error Handling
@@ -278,8 +278,8 @@ wheeck/
 ## Cross-Cutting Concerns
 
 **Logging:** `core.get_logger(PATH_LOG, name)` writes INFO and above to `log/YYYY_MM_DD.log` (format `%(asctime)s.%(msecs)03d [%(name)s] %(levelname)s - %(message)s`), and ERROR and above to the console. Every module creates its own logger at import with `__name__`. Messages use `%`-style lazy arguments and the convention `'doing X on page %d of %s...'` / `'... ok!'`.
-**Validation:** Regex extraction in `doc_scanner`, fuzzy vehicle and driver matching against `members` (`check_similarity`), duplicate check (`QUERY_CHECK_DUPLICATE`), and DB constraints (`UNIQUE`, `CHECK > 0`, `NOT NULL` in `db/tables/*.sql`) as the final guard.
-**Authentication:** The app connects to PostgreSQL over ODBC with the credentials in `config/querier.local.json`. The template `config/querier.json` names user `wheeck`, the role created by `db/roles/wheeck.sql` (SELECT, INSERT and UPDATE only, no DELETE). `pg_dump` runs as `postgres` with `-w`, so it needs non-interactive auth. The OpenRouteService key is `ors_api_key` in `config/wheeck.local.json`.
+**Validation:** Regex extraction in `doc_scanner`, fuzzy vehicle and driver matching against `members` (`check_similarity`), duplicate check (`QUERY_CHECK_DUPLICATE`), and DB constraints (`UNIQUE`, `CHECK > 0`, `NOT NULL` in `sql/tables/*.sql`) as the final guard.
+**Authentication:** The app connects to PostgreSQL over ODBC with the credentials in `config/querier.local.json`. The template `config/querier.json` names user `wheeck`, the role created by `sql/roles/wheeck.sql` (SELECT, INSERT and UPDATE only, no DELETE). `pg_dump` runs as `postgres` with `-w`, so it needs non-interactive auth. The OpenRouteService key is `ors_api_key` in `config/wheeck.local.json`.
 
 ---
 

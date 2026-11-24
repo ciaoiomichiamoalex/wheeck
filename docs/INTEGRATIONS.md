@@ -28,19 +28,19 @@
     - `Querier(save_changes=False)` turns autocommit off. `doc_scanner()` in `src/wheeck/recording_docs.py` runs one transaction per PDF and commits or rolls it back through `Querier.save_changes()`.
     - Only `save_warning()` opens an autocommit connection: with no `querier` passed it opens one with `save_changes=True`. `check_gaps()`, `check_duplicate()` with no `querier` passed and the overview generators (`generate_overview()`, `generate_summary()`, `generate_current()`) open their own connections with the default `save_changes=False`, so autocommit is off.
   - Connections are opened per function call and closed in `Querier.__del__`. There is no pool.
-  - Objects, installed in order by `db/install.sql` (`psql -f db/install.sql`):
-    - Schema: `db/schema/wheeck.sql` runs `DROP SCHEMA IF EXISTS wheeck CASCADE`, then recreates the schema. Re-running the install deletes all existing data.
+  - Objects, installed in this order with the psql `\ir` meta-command (sequence in the README):
+    - Schema: `sql/schema/wheeck.sql` runs `DROP SCHEMA IF EXISTS wheeck CASCADE`, then recreates the schema. Re-running the install deletes all existing data.
     - Tables:
-      - `wheeck.delivery` (`db/tables/delivery.sql`)
-      - `wheeck.delivery_history` (`db/tables/delivery_history.sql`). It has the same columns as `wheeck.delivery`, and `db/views/vw_delivery_gap.sql` unions the two. Nothing in `src/` writes to it.
-      - `wheeck.delivery_warning` (`db/tables/delivery_warning.sql`)
-      - `wheeck.delivery_discard` (`db/tables/delivery_discard.sql`)
-    - Function and trigger: `wheeck.sync_discard_status()` and `trg_sync_discard_status`, which copy `delivery_warning.status` to `delivery_discard.status` for `DISCARD` messages (`db/functions/sync_discard_status.sql`, `db/triggers/trg_sync_discard_status.sql`).
-    - Role: login role `wheeck` with `SELECT, INSERT, UPDATE` and execute/sequence grants on the schema (`db/roles/wheeck.sql`). The script contains a plaintext role password. Replace the literal before install, put the new value in `config/querier.local.json`, and never copy it into docs.
+      - `wheeck.delivery` (`sql/tables/delivery.sql`)
+      - `wheeck.delivery_history` (`sql/tables/delivery_history.sql`). It has the same columns as `wheeck.delivery`, and `sql/views/vw_delivery_gap.sql` unions the two. Nothing in `src/` writes to it.
+      - `wheeck.delivery_warning` (`sql/tables/delivery_warning.sql`)
+      - `wheeck.delivery_discard` (`sql/tables/delivery_discard.sql`)
+    - Function and trigger: `wheeck.sync_discard_status()` and `trg_sync_discard_status`, which copy `delivery_warning.status` to `delivery_discard.status` for `DISCARD` messages (`sql/functions/sync_discard_status.sql`, `sql/triggers/trg_sync_discard_status.sql`).
+    - Role: login role `wheeck` with `SELECT, INSERT, UPDATE` and execute/sequence grants on the schema (`sql/roles/wheeck.sql`). The script contains a plaintext role password. Replace the literal before install, put the new value in `config/querier.local.json`, and never copy it into docs.
     - Views:
-      - `wheeck.vw_discard_message` (`db/views/vw_discard_message.sql`)
-      - `wheeck.vw_gap_message` (`db/views/vw_gap_message.sql`)
-      - `wheeck.vw_delivery_gap` (`db/views/vw_delivery_gap.sql`)
+      - `wheeck.vw_discard_message` (`sql/views/vw_discard_message.sql`)
+      - `wheeck.vw_gap_message` (`sql/views/vw_gap_message.sql`)
+      - `wheeck.vw_delivery_gap` (`sql/views/vw_delivery_gap.sql`)
       - The first two parse the warning `message_text` written by `MessageGenre` in `src/wheeck/recording_docs.py`. That text format is a contract between the Python code and the SQL views.
   - Backup: at the end of every run in which at least one file name matched `PATTERN_WORKING_DOC`, even if that document rolled back, `run()` executes `CMD_BACKUP_DB` from `src/wheeck/constants.py` through `subprocess.run(..., shell=True)`.
     - The command is `pg_dump -U postgres -h 127.0.0.1 -p 5432 -d postgres -n wheeck -w -c -F c` and writes `scheme/wheeck.bak.dump`.
@@ -110,7 +110,7 @@
 
 **Secrets location:**
 - In the `config/*.local.json` files, which `.gitignore` excludes (`/config/*.local.json`). The committed templates hold `null` placeholders.
-- Exception: `db/roles/wheeck.sql` is committed with a literal password for the `wheeck` role.
+- Exception: `sql/roles/wheeck.sql` is committed with a literal password for the `wheeck` role.
 - `.idea/dataSources.local.xml` (gitignored) may hold IDE database credentials.
 
 ## Webhooks & Callbacks
