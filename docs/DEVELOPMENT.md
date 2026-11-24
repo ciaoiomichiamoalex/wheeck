@@ -36,7 +36,7 @@ wheeck is developed and run on Windows. The commands below use Git Bash.
 
    <!-- VERIFY: the run references scheme/overview.xlsx and scheme/summary.xlsx, which are not in the repository -->
 
-5. Install the database schema as described in the README: run its `\ir` lines at a `psql` prompt started from the repository root. The first script drops the `wheeck` database, so it deletes all recorded data.
+5. Install the database as described in the README: run its `\ir` lines at a `psql` prompt started from the repository root. The first script drops the `wheeck` database, so it deletes all recorded data.
 
 There is no `.env` file, no build step and no compile step. The application runs straight from `src/`.
 

@@ -163,7 +163,7 @@ wheeck/
 - Wiring: call it from `generate_current()` and export it from `src/wheeck/__init__.py`.
 
 **New SQL query:**
-- Add it to `src/wheeck/constants.py` as a `QUERY_*` triple-quoted string starting with `"""\`, with schema-qualified names (`wheeck.<table>`) and `?` placeholders.
+- Add it to `src/wheeck/constants.py` as a `QUERY_*` triple-quoted string starting with `"""\`, with schema-qualified names (`public.<table>`) and `?` placeholders.
 
 **New DB object (table, view, function, trigger):**
 - File: `sql/<kind>/<object_name>.sql`. Views and functions start with `DROP ... IF EXISTS` and then `CREATE OR REPLACE`. Tables use `CREATE TABLE IF NOT EXISTS` with named constraints.
